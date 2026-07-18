@@ -25,7 +25,6 @@ out/
 third_party/
 
 # CMake
-CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
