@@ -21,6 +21,9 @@ out/
 *.so
 *.dylib
 
+# Third-party libs
+third_party/
+
 # CMake
 CMakeCache.txt
 CMakeFiles/
