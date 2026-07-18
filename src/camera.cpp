@@ -39,29 +39,29 @@ bool HikvisionCamera::enumDevices() {
               << " 个设备:" << std::endl;
 
     for (unsigned int i = 0; i < _device_list.nDeviceNum; ++i) {
-        MV_CC_DEVICE_INFO& info = _device_list.pDeviceInfo[i];
+        MV_CC_DEVICE_INFO* info = _device_list.pDeviceInfo[i];
         char serial[64] = {0};
         char model[64]  = {0};
 
-        if (info.nTLayerType == MV_GIGE_DEVICE) {
+        if (info->nTLayerType == MV_GIGE_DEVICE) {
             // GigE 相机
             snprintf(serial, sizeof(serial), "%s",
-                     info.SpecialInfo.stGigEInfo.chSerialNumber);
+                     info->SpecialInfo.stGigEInfo.chSerialNumber);
             snprintf(model, sizeof(model), "%s",
-                     info.SpecialInfo.stGigEInfo.chModelName);
-            uint32_t ip = info.SpecialInfo.stGigEInfo.nCurrentIp;
+                     info->SpecialInfo.stGigEInfo.chModelName);
+            uint32_t ip = info->SpecialInfo.stGigEInfo.nCurrentIp;
             std::cout << "  [" << i << "] " << model
                       << " | SN: " << serial
                       << " | IP: " << ((ip >> 24) & 0xFF) << "."
                                     << ((ip >> 16) & 0xFF) << "."
                                     << ((ip >> 8) & 0xFF) << "."
                                     << (ip & 0xFF) << std::endl;
-        } else if (info.nTLayerType == MV_USB_DEVICE) {
+        } else if (info->nTLayerType == MV_USB_DEVICE) {
             // USB 相机
             snprintf(serial, sizeof(serial), "%s",
-                     info.SpecialInfo.stUsb3VInfo.chSerialNumber);
+                     info->SpecialInfo.stUsb3VInfo.chSerialNumber);
             snprintf(model, sizeof(model), "%s",
-                     info.SpecialInfo.stUsb3VInfo.chModelName);
+                     info->SpecialInfo.stUsb3VInfo.chModelName);
             std::cout << "  [" << i << "] " << model
                       << " | SN: " << serial
                       << " | USB" << std::endl;
@@ -77,25 +77,25 @@ int HikvisionCamera::findDevice(const std::string& serial,
                                  const std::string& ip,
                                  const std::string& user_id) {
     for (unsigned int i = 0; i < _device_list.nDeviceNum; ++i) {
-        MV_CC_DEVICE_INFO& info = _device_list.pDeviceInfo[i];
+        MV_CC_DEVICE_INFO* info = _device_list.pDeviceInfo[i];
         char dev_serial[64] = {0};
         char dev_user_id[64] = {0};
         char dev_ip_str[32] = {0};
 
-        if (info.nTLayerType == MV_GIGE_DEVICE) {
+        if (info->nTLayerType == MV_GIGE_DEVICE) {
             snprintf(dev_serial, sizeof(dev_serial), "%s",
-                     info.SpecialInfo.stGigEInfo.chSerialNumber);
+                     info->SpecialInfo.stGigEInfo.chSerialNumber);
             snprintf(dev_user_id, sizeof(dev_user_id), "%s",
-                     info.SpecialInfo.stGigEInfo.chUserDefinedName);
-            uint32_t ip_val = info.SpecialInfo.stGigEInfo.nCurrentIp;
+                     info->SpecialInfo.stGigEInfo.chUserDefinedName);
+            uint32_t ip_val = info->SpecialInfo.stGigEInfo.nCurrentIp;
             snprintf(dev_ip_str, sizeof(dev_ip_str), "%u.%u.%u.%u",
                      (ip_val >> 24) & 0xFF, (ip_val >> 16) & 0xFF,
                      (ip_val >> 8) & 0xFF, ip_val & 0xFF);
-        } else if (info.nTLayerType == MV_USB_DEVICE) {
+        } else if (info->nTLayerType == MV_USB_DEVICE) {
             snprintf(dev_serial, sizeof(dev_serial), "%s",
-                     info.SpecialInfo.stUsb3VInfo.chSerialNumber);
+                     info->SpecialInfo.stUsb3VInfo.chSerialNumber);
             snprintf(dev_user_id, sizeof(dev_user_id), "%s",
-                     info.SpecialInfo.stUsb3VInfo.chUserDefinedName);
+                     info->SpecialInfo.stUsb3VInfo.chUserDefinedName);
         }
 
         // 按序列号匹配（最高优先级）
@@ -161,7 +161,7 @@ bool HikvisionCamera::openDevice(int index) {
     _device_index = index;
 
     // 创建句柄
-    int ret = MV_CC_CreateHandle(&_handle, _device_list.pDeviceInfo + index);
+    int ret = MV_CC_CreateHandle(&_handle, _device_list.pDeviceInfo[index]);
     if (ret != MV_OK) {
         std::cerr << "[Camera] 创建相机句柄失败, 错误码: 0x"
                   << std::hex << ret << std::dec << std::endl;
@@ -229,8 +229,8 @@ void HikvisionCamera::closeDevice() {
 // ============================================================
 bool HikvisionCamera::setPixelFormat(const std::string& format) {
     if (!_handle) return false;
-    int ret = MV_CC_SetEnumValue(_handle, "PixelFormat",
-                                  const_cast<char*>(format.c_str()));
+    int ret = MV_CC_SetEnumValueByString(_handle, "PixelFormat",
+                                           format.c_str());
     if (ret != MV_OK) {
         std::cerr << "[Camera] 设置像素格式 " << format
                   << " 失败, 错误码: 0x"
@@ -251,26 +251,25 @@ bool HikvisionCamera::setTriggerMode(int mode) {
         case 0: {
             // 连续采集
             MV_CC_SetEnumValue(_handle, "TriggerMode",
-                                (void*)(uintptr_t)MV_TRIGGER_MODE_OFF);
+                                MV_TRIGGER_MODE_OFF);
             break;
         }
         case 1: {
             // 软触发
             MV_CC_SetEnumValue(_handle, "TriggerMode",
-                                (void*)(uintptr_t)MV_TRIGGER_MODE_ON);
+                                MV_TRIGGER_MODE_ON);
             MV_CC_SetEnumValue(_handle, "TriggerSource",
-                                (void*)(uintptr_t)MV_TRIGGER_SOURCE_SOFTWARE);
+                                MV_TRIGGER_SOURCE_SOFTWARE);
             break;
         }
         case 2: {
             // 硬触发 (Line0 接收外部传感器信号)
             MV_CC_SetEnumValue(_handle, "TriggerMode",
-                                (void*)(uintptr_t)MV_TRIGGER_MODE_ON);
+                                MV_TRIGGER_MODE_ON);
             MV_CC_SetEnumValue(_handle, "TriggerSource",
-                                (void*)(uintptr_t)MV_TRIGGER_SOURCE_LINE0);
-            // 设置触发极性: 上升沿触发
-            MV_CC_SetEnumValue(_handle, "TriggerActivation",
-                                (void*)(uintptr_t)MV_TRIGGER_ACTIVATION_RISING_EDGE);
+                                MV_TRIGGER_SOURCE_LINE0);
+            // 设置触发极性: 上升沿触发 (0 = Rising Edge)
+            MV_CC_SetEnumValue(_handle, "TriggerActivation", 0);
             break;
         }
         default:
