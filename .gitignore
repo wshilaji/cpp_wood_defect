@@ -18,9 +18,6 @@ tags
 *.obj
 *.exe
 *.out
-*.a
-*.so
-*.dylib
 
 # Third-party libs
 #third_party/
