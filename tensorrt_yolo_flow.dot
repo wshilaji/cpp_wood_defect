@@ -1,0 +1,246 @@
+digraph TensorRT_YOLO_Core {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=11];
+    edge [fontname="Helvetica", fontsize=9];
+
+    // ========================
+    // 颜色定义
+    // ========================
+    subgraph cluster_legend {
+        label="图例";
+        style=dashed;
+        fontsize=10;
+        node_public  [label="公共 API",       shape=box, style=filled, fillcolor=lightblue];
+        node_impl    [label="内部实现 (Pimpl)", shape=box, style=filled, fillcolor=lightyellow];
+        node_backend [label="推理后端 (GPU)",   shape=box, style=filled, fillcolor=lightsalmon];
+        node_cuda    [label="CUDA Kernel",      shape=box, style=filled, fillcolor=lightgreen];
+        node_engine  [label="TensorRT Engine",  shape=box, style=filled, fillcolor=plum];
+        node_post    [label="CPU 后处理",       shape=box, style=filled, fillcolor=wheat];
+        node_data    [label="数据结构",         shape=ellipse, style=filled, fillcolor=lightgray];
+    }
+
+    // ========================
+    // 入口: 用户调用
+    // ========================
+    entry [label="DetectModel::predict(Image&)", shape=box, style=filled, fillcolor=lightblue];
+
+    // ========================
+    // BaseModel::Impl (Pimpl 核心)
+    // ========================
+    subgraph cluster_impl {
+        label="BaseModel::Impl (Pimpl 核心)";
+        style=filled;
+        fillcolor="#FFF8E1";
+        node [style=filled, fillcolor=lightyellow];
+
+        predict_multi [label="predict(vector<Image>&)\n单张→多张包装"];
+        with_perf    [label="withPerformanceReport()\n可选性能计时包裹"];
+
+        subgraph cluster_perf {
+            label="性能计时 (可选)";
+            style=dashed;
+            cpu_timer [label="CpuTimer::start/stop", shape=box, style=filled, fillcolor="#FFE0B2"];
+            gpu_timer [label="GpuTimer::start/stop\n(CUDA Events)", shape=box, style=filled, fillcolor="#FFE0B2"];
+        }
+    }
+
+    // ========================
+    // TrtBackend (推理后端)
+    // ========================
+    subgraph cluster_backend {
+        label="TrtBackend (GPU 推理后端)";
+        style=filled;
+        fillcolor="#FFE0E0";
+        node [style=filled, fillcolor=lightsalmon];
+
+        infer_entry  [label="infer(images)\n入口: 切换设备 + 路由"];
+        route        [label="dynamic ?", shape=diamond, fillcolor=lightyellow];
+
+        subgraph cluster_static {
+            label="staticInfer() — CUDA Graph 路径";
+            style=filled;
+            fillcolor="#FFCCCC";
+
+            static_h2d      [label="① Memcpy H→D\n(非 cuda_mem 时)\nmemcpy / updateMemcpyNode"];
+            static_letterbox [label="② cudaLetterbox / cudaMultiLetterbox\nCUDA Kernel: resize+pad+归一化\n更新 updateKernelNodeParams"];
+            static_enqueue   [label="③ manager_->enqueueV3()\nTensorRT 推理执行"];
+            static_d2h       [label="④ 输出 buffer->deviceToHost()\n结果 D→H"];
+
+            static_h2d -> static_letterbox -> static_enqueue -> static_d2h;
+        }
+
+        subgraph cluster_dynamic {
+            label="dynamicInfer() — 动态形状路径";
+            style=filled;
+            fillcolor="#FFCCCC";
+
+            dyn_update    [label="① 更新 tensor shape + setTensorAddress\n+ setInputShape"];
+            dyn_h2d       [label="② Memcpy H→D (非 cuda_mem 时)"];
+            dyn_letterbox [label="③ cudaLetterbox (逐图)\nCUDA Kernel"];
+            dyn_enqueue   [label="④ manager_->enqueueV3()\nTensorRT 推理执行"];
+            dyn_d2h       [label="⑤ 输出 buffer->deviceToHost()"];
+            dyn_sync      [label="⑥ cudaStreamSynchronize"];
+
+            dyn_update -> dyn_h2d -> dyn_letterbox -> dyn_enqueue -> dyn_d2h -> dyn_sync;
+        }
+    }
+
+    // ========================
+    // TRTManager + CudaGraph
+    // ========================
+    subgraph cluster_engine {
+        label="TensorRT Engine 管理层";
+        style=filled;
+        fillcolor="#F3E5F5";
+        node [style=filled, fillcolor=plum];
+
+        trt_init [label="TRTManager::initialize()\n① createInferRuntime\n② deserializeCudaEngine\n③ createExecutionContext"];
+        trt_clone [label="TRTManager::clone()\n共享 engine, 新建 context"];
+        trt_enqueue [label="TRTManager::enqueueV3()\n→ context_->enqueueV3(stream)"];
+
+        subgraph cluster_cuda_graph {
+            label="CudaGraph (静态形状加速)";
+            style=dashed;
+            node [style=filled, fillcolor="#E1BEE7"];
+
+            cg_capture     [label="captureCudaGraph()\n捕获 H2D+Letterbox+推理+D2H\n为单一 CUDA Graph"];
+            cg_launch      [label="launch(stream)\ncudaGraphLaunch + sync"];
+            cg_update_k [label="updateKernelNodeParams()\n每帧更新图像指针/尺寸"];
+            cg_update_m [label="updateMemcpyNodeParams()\n每帧更新 H→D 地址"];
+        }
+    }
+
+    // ========================
+    // 内存管理
+    // ========================
+    subgraph cluster_memory {
+        label="内存管理 (BaseBuffer 多态)";
+        style=filled;
+        fillcolor="#E8F5E9";
+        node [style=filled, fillcolor=lightgreen];
+
+        buffer_types [label="BufferFactory::createBuffer()", shape=point];
+        device_buf   [label="DeviceBuffer\n纯设备内存"];
+        discrete_buf [label="DiscreteBuffer\n分离 H+D 内存"];
+        unified_buf  [label="UnifiedBuffer\n统一内存 (Managed)"];
+        mapped_buf   [label="MappedBuffer\n零拷贝映射内存\n(Jetson 集成 GPU)"];
+        tensor_info  [label="TensorInfo\n张量名+shape+dtype+buffer", shape=record];
+
+        buffer_types -> {device_buf; discrete_buf; unified_buf; mapped_buf};
+    }
+
+    // ========================
+    // 预处理
+    // ========================
+    subgraph cluster_preprocess {
+        label="GPU 预处理 (letterbox.cu)";
+        style=filled;
+        fillcolor="#C8E6C9";
+        node [style=filled, fillcolor=lightgreen];
+
+        letterbox_kernel [label="cudaLetterbox (单图)\ncudaMultiLetterbox (批量)\n━━━━━━━━━━━━━━\nresize (双线性插值)\n+ letterbox pad (border_value)\n+ BGR→RGB (可选 swap_rb)\n+ 归一化 (alpha×x + beta)"];
+        transform [label="Transform\n仿射矩阵: scale + offset\napply(): 逆变换还原坐标"];
+    }
+
+    // ========================
+    // 后处理 (CPU)
+    // ========================
+    subgraph cluster_postprocess {
+        label="CPU 后处理";
+        style=filled;
+        fillcolor="#FFF3E0";
+        node [style=filled, fillcolor=wheat];
+
+        post_detect [label="postProcessDetect(idx)\n━━━━━━━━━━━━━━\n① 从 output tensors 读取:\n   num, boxes, scores, classes\n② Transform::apply() 逆变换\n   将推理坐标→原图坐标\n③ 组装 DetectRes 返回"];
+
+        post_segment [label="postProcessSegment(idx)\n额外处理 mask tensor"];
+        post_obb     [label="postProcessOBB(idx)\n额外处理旋转角度 theta"];
+        post_pose    [label="postProcessPose(idx)\n额外处理关键点 kpts"];
+        post_classify[label="postProcessClassify(idx)\nTop-K 分类结果"];
+    }
+
+    // ========================
+    // 数据结构
+    // ========================
+    subgraph cluster_data {
+        label="数据结构";
+        style=filled;
+        fillcolor="#F5F5F5";
+        node [style=filled, fillcolor=lightgray];
+
+        image_struct [label="Image\n{ptr | width | height | channels | pitch}"];
+        detect_res   [label="DetectRes\n{num | boxes[] | scores[] | classes[]}"];
+        infer_config [label="InferConfig\n{device_id | cuda_mem | input_shape | ...}"];
+        process_cfg  [label="ProcessConfig\n{swap_rb | border_value | alpha | beta}"];
+    }
+
+    // ========================
+    // 连接线
+    // ========================
+
+    // 入口流
+    entry -> predict_multi;
+    predict_multi -> with_perf;
+    with_perf -> infer_entry;
+
+    // 路由
+    infer_entry -> route;
+    route -> static_h2d [label="否 (静态)", fontcolor=blue];
+    route -> dyn_update [label="是 (动态)", fontcolor=red];
+
+    // 静态路径结束 → launch
+    static_d2h -> cg_launch [label="CUDA Graph\n重放执行"];
+    cg_launch -> post_detect;
+
+    // 动态路径结束 → sync → post
+    dyn_sync -> post_detect;
+
+    // 后处理
+    post_detect -> detect_res;
+
+    // 引擎管理
+    trt_init -> static_enqueue;
+    trt_init -> dyn_enqueue;
+    trt_clone -> trt_init [style=dotted, label="clone 时"];
+
+    // CUDA Graph
+    cg_capture -> cg_launch [style=dashed, label="首次初始化时\n捕获一次"];
+    cg_update_k -> static_letterbox [style=dashed];
+    cg_update_m -> static_h2d [style=dashed];
+
+    // 内存
+    tensor_info -> {device_buf; discrete_buf; unified_buf; mapped_buf} [style=dotted];
+    static_d2h -> tensor_info [style=dotted, label="输出 buffer"];
+    dyn_d2h -> tensor_info [style=dotted, label="输出 buffer"];
+
+    // 预处理
+    letterbox_kernel -> transform [label="输出 meta 信息\n(有效区域+偏移)"];
+    transform -> post_detect [label="逆变换还原坐标"];
+
+    // 配置
+    infer_config -> infer_entry [style=dotted];
+    process_cfg -> letterbox_kernel [style=dotted];
+    image_struct -> predict_multi [style=dotted];
+
+    // ========================
+    // 初始化时序
+    // ========================
+    subgraph cluster_init {
+        label="初始化流程 (构造函数)";
+        style=filled;
+        fillcolor="#ECEFF1";
+        node [style=filled, fillcolor="#CFD8DC"];
+
+        init_start [label="DetectModel(engine_file, option)", shape=box];
+        init_read   [label="ReadBinaryFromFile()\n读取 .engine 文件"];
+        init_trt    [label="TRTManager::initialize()\n反序列化引擎"];
+        init_info   [label="getTensorInfo()\n遍历 I/O tensors\n分配 buffer"];
+        init_vars   [label="initialize()\n计算尺寸, 分配输入buffer\n初始化 Transform"];
+        init_graph  [label="captureCudaGraph()\n静态模型: 捕获 CUDA Graph\n动态模型: 跳过"];
+
+        init_start -> init_read -> init_trt -> init_info -> init_vars -> init_graph;
+    }
+
+    init_graph -> infer_entry [style=dotted, label="初始化完成,\n等待 predict() 调用"];
+}
