@@ -10,7 +10,10 @@ constexpr int         CAMERA_WIDTH     = 1920;
 constexpr int         CAMERA_HEIGHT    = 1080;
 constexpr float       CAMERA_EXPOSURE  = 5000.0f;
 constexpr float       CAMERA_GAIN      = 0.0f;
-constexpr int         CAMERA_TRIGGER   = 2;  // 0=连续 1=软触发 2=硬触发
+constexpr int         CAMERA_TRIGGER   = 1;  // 0=连续 1=软触发 2=硬触发
+
+// ---- PLC TCP 通信 ----
+constexpr int         PLC_TCP_PORT     = 5000;
 
 // ---- 模型 ----
 constexpr const char* ENGINE_PATH    = "models/defect_model.trt";

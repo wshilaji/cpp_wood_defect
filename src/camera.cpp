@@ -217,6 +217,10 @@ void HikvisionCamera::closeDevice() {
         _grabbing.store(false);
     }
     if (_handle) {
+        // 恢复连续采集模式，避免相机残留硬触发状态导致其他程序无法取流
+        MV_CC_SetEnumValue(_handle, "TriggerMode", MV_TRIGGER_MODE_OFF);
+        std::cout << "[Camera] 已恢复连续采集模式" << std::endl;
+
         MV_CC_CloseDevice(_handle);
         MV_CC_DestroyHandle(_handle);
         _handle = nullptr;

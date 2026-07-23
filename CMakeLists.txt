@@ -35,6 +35,7 @@ set(SOURCES
     src/main.cpp
     src/camera.cpp
     src/postprocessor.cpp
+    src/plc_link.cpp
 )
 
 set(HEADERS
@@ -42,6 +43,7 @@ set(HEADERS
     include/camera.h
     include/infer.h
     include/postprocessor.h
+    include/plc_link.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})

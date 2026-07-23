@@ -1,5 +1,7 @@
 /**
  * 木板瑕疵检测 v2.0 — TensorRT-YOLO 推理 + 海康相机 + PLC
+ *
+ * 流程: PLC ──TCP──→ Nano ──软触发──→ 相机 ──图像──→ AI检测 ──TCP──→ PLC
  */
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -10,57 +12,56 @@
 #include <deque>
 #include <numeric>
 #include <exception>
+#include <sstream>
 
 #include "config.h"
 #include "camera.h"
 #include "infer.h"
 #include "postprocessor.h"
+#include "plc_link.h"
 
 static std::atomic<bool> running{true};
 
 // ============================================================
-// 全局指针 + 崩溃清理（无论怎么崩，都尝试释放相机）
+// 全局指针 + 崩溃清理
 // ============================================================
-static HikvisionCamera* g_cam = nullptr;
+static HikvisionCamera* g_cam   = nullptr;
+static PlcLink*         g_plc   = nullptr;
 
-static void cleanup_camera() {
+static void cleanup_all() {
     if (g_cam && g_cam->isRunning()) {
-        std::cerr << "\n[CrashGuard] 强制释放相机句柄..." << std::endl;
+        std::cerr << "\n[CrashGuard] 强制释放相机..." << std::endl;
         g_cam->stop();
+    }
+    if (g_plc) {
+        g_plc->stop();
     }
 }
 
-// std::terminate 触发时（未捕获异常 → std::terminate → std::abort）
 static void on_terminate() {
     std::cerr << "\n[CrashGuard] std::terminate 触发" << std::endl;
-    cleanup_camera();
-    std::abort();  // 恢复默认行为
+    cleanup_all();
+    std::abort();
 }
 
-// 信号处理（SIGINT / SIGTERM / SIGSEGV / SIGABRT）
 static void on_signal(int sig) {
     const char* name = "UNKNOWN";
     switch (sig) {
-        case SIGINT:  name = "SIGINT(ctrl+c)";  break;
-        case SIGTERM: name = "SIGTERM";          break;
-        case SIGSEGV: name = "SIGSEGV";          break;
-        case SIGABRT: name = "SIGABRT";          break;
+        case SIGINT:  name = "SIGINT";  break;
+        case SIGTERM: name = "SIGTERM"; break;
+        case SIGSEGV: name = "SIGSEGV"; break;
+        case SIGABRT: name = "SIGABRT"; break;
     }
 
     if (sig == SIGINT || sig == SIGTERM) {
-        // 优雅退出：先设标志让主循环停下来
         std::cerr << "\n[CrashGuard] " << name << " 收到，正在退出..." << std::endl;
         running = false;
-        cleanup_camera();
-        // 主循环检查到 running==false 后会正常走到 cam.stop()
-        // cleanup_camera 里也调了一次 stop，多次调用是安全的
+        cleanup_all();
         return;
     }
 
-    // SIGSEGV / SIGABRT：尽力清理（此时进程状态可能异常，但不试白不试）
-    std::cerr << "\n[CrashGuard] " << name << " 异常信号，尝试清理相机..." << std::endl;
-    cleanup_camera();
-    // 恢复默认处理以生成 core dump
+    std::cerr << "\n[CrashGuard] " << name << " 异常信号，尝试清理..." << std::endl;
+    cleanup_all();
     std::signal(sig, SIG_DFL);
     std::raise(sig);
 }
@@ -96,14 +97,14 @@ static cv::Mat enhance(const cv::Mat& f, float clip, int tile) {
 // 主函数
 // ============================================================
 int main() {
-    // ---- 注册崩溃清理（std::terminate + 信号） ----
+    // ---- 注册崩溃清理 ----
     std::set_terminate(on_terminate);
     std::signal(SIGINT,  on_signal);
     std::signal(SIGTERM, on_signal);
     std::signal(SIGSEGV, on_signal);
     std::signal(SIGABRT, on_signal);
 
-    // ---- 1. 相机 ----
+    // ---- 1. 相机（软触发模式） ----
     HikvisionCamera cam;
     g_cam = &cam;
 
@@ -126,18 +127,49 @@ int main() {
         // ---- 3. 后处理 ----
         Postprocessor post(Config::CONF_THRESHOLD, Config::CLASSES);
 
-        // ---- 4. 主循环 ----
+        // ---- 4. PLC TCP Server ----
+        PlcLink plc(Config::PLC_TCP_PORT);
+        g_plc = &plc;
+        if (!plc.start()) {
+            std::cerr << "PLC TCP Server 启动失败" << std::endl;
+            cam.stop();
+            return -3;
+        }
+
+        // ---- 5. 主循环（PLC 事件驱动） ----
         FPS fps;
-        uint64_t n = 0, ng = 0;
+        uint64_t total = 0, ng_total = 0;
         auto t0 = std::chrono::steady_clock::now();
 
-        std::cout << "系统就绪\n" << std::endl;
+        std::cout << "系统就绪（等待 PLC 触发指令...）\n" << std::endl;
 
         while (running) {
+            // 等待 PLC 发来触发指令（每秒检查 running 标志）
+            if (!plc.waitTrigger(1000)) {
+                if (!plc.isConnected()) {
+                    std::cout << "[PLC] 等待连接中..." << std::endl;
+                }
+                continue;
+            }
+
             auto t1 = std::chrono::steady_clock::now();
 
-            cv::Mat frame = cam.read();
-            if (frame.empty()) { std::this_thread::sleep_for(std::chrono::milliseconds(2)); continue; }
+            // 软触发相机拍照
+            cam.softwareTrigger();
+
+            // 读取图像
+            cv::Mat frame;
+            int retry = 0;
+            while (retry < 10 && running) {
+                frame = cam.read();
+                if (!frame.empty()) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                retry++;
+            }
+            if (frame.empty()) {
+                std::cerr << "[Camera] 触发后未获取到图像" << std::endl;
+                continue;
+            }
 
             // CLAHE 增强
             cv::Mat img = enhance(frame, 2.0f, 8);
@@ -152,8 +184,16 @@ int main() {
             // NG 判定
             bool is_ng = false;
             for (auto& d : defects)
-                if (d.level == "ng") { is_ng = true; ng++; break; }
-            // TODO: PLC 剔除信号
+                if (d.level == "ng") { is_ng = true; ng_total++; break; }
+
+            // 发送结果给 PLC
+            if (is_ng) {
+                plc.sendNG();
+                std::cout << "[PLC] → NG" << std::endl;
+            } else {
+                plc.sendOK();
+                std::cout << "[PLC] → OK" << std::endl;
+            }
 
             if (!defects.empty() && Config::SAVE_IMAGES && is_ng)
                 post.save(img, defects, Config::OUTPUT_DIR);
@@ -163,10 +203,6 @@ int main() {
                 cv::putText(img, is_ng ? "NG" : "OK", {10, 30},
                             cv::FONT_HERSHEY_SIMPLEX, 1,
                             is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 2);
-                std::ostringstream ss;
-                ss << "FPS:" << std::fixed << std::setprecision(1) << fps.val();
-                cv::putText(img, ss.str(), {10, 60},
-                            cv::FONT_HERSHEY_SIMPLEX, 0.6, {255,255,255}, 1);
                 cv::imshow("Wood Defect Detection", img);
                 if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
             }
@@ -174,28 +210,30 @@ int main() {
             // 统计
             auto t2 = std::chrono::steady_clock::now();
             fps.add(std::chrono::duration<double, std::milli>(t2 - t1).count());
-            n++;
+            total++;
 
-            if (n % 100 == 0)
+            if (total % 50 == 0)
                 std::cout << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
-                          << " | 帧:" << n << " | NG:" << ng << std::endl;
+                          << " | 检测:" << total << " | NG:" << ng_total << std::endl;
         }
 
+        plc.stop();
         cam.stop();
         cv::destroyAllWindows();
         auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        std::cout << "\n停止 | 运行:" << (int)dt << "s | 帧:" << n
-                  << " | FPS:" << (n / std::max(dt, 0.001))
-                  << " | NG:" << ng << std::endl;
+        std::cout << "\n停止 | 运行:" << (int)dt << "s | 检测:" << total
+                  << " | NG:" << ng_total << std::endl;
         return 0;
 
     } catch (const std::exception& e) {
         std::cerr << "异常: " << e.what() << std::endl;
+        if (g_plc) g_plc->stop();
         cam.stop();
-        return -3;
+        return -5;
     } catch (...) {
         std::cerr << "未知异常" << std::endl;
+        if (g_plc) g_plc->stop();
         cam.stop();
-        return -4;
+        return -6;
     }
 }
