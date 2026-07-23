@@ -29,3 +29,22 @@ IP: 192.168.2.10（或 2.x 网段内其他未占用的IP）
 bash
 ping 192.168.2.10
 如果通，就说明Nano和相机已经通过有线网络正常通信了。
+
+
+直接用 ip 命令临时设置（立刻生效） 这个方法重启后会丢失。
+sudo ip link set dev enP8p1s0 mtu 9000
+
+
+
+使用 nmcli（推荐，永久生效）
+bash
+# 1. 查看有线连接的名称
+nmcli con show
+# 1. 先确保有线网卡没有被其他配置占用
+sudo nmcli device set enP8p1s0 managed yes
+# 2. 修改 "Wired connection 1" 的 MTU
+sudo nmcli con mod "Wired connection 1" 802-3-ethernet.mtu 9000
+# 3. 重启这个连接
+sudo nmcli con down "Wired connection 1" && sudo nmcli con up "Wired connection 1"
+# 4. 验证
+ip addr show enP8p1s0 | grep mtu
