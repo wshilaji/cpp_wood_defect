@@ -35,9 +35,9 @@ constexpr const char* LABEL_PATH  = "example/labels.txt";
 constexpr const char* CAMERA_IP   = "192.168.2.10";
 //constexpr int         CAMERA_W    = 640;
 //constexpr int         CAMERA_H    = 640;
-constexpr int         CAMERA_W    = 0;     // 0=不修改，用相机默认 2592×1944
-constexpr int         CAMERA_H    = 0;
-constexpr float       EXPOSURE_US = 5000.0f;
+constexpr int         CAMERA_W    = 2592;  // MV-CS050-60GC 原生分辨率
+constexpr int         CAMERA_H    = 1944;
+constexpr float       EXPOSURE_US = 80000.0f;
 constexpr float       GAIN_DB     = 0.0f;
 constexpr int         PLC_PORT    = 5000;
 
@@ -143,12 +143,12 @@ int main() {
         std::cout << "========================================\n" << std::endl;
 
         cv::namedWindow("Example Demo - YOLO11n", cv::WINDOW_NORMAL);
-        cv::resizeWindow("Example Demo - YOLO11n", 1280, 720);
+        cv::resizeWindow("Example Demo - YOLO11n", 1920, 1080);
 
         // 初始显示空白帧，让窗口先出来
-        cv::Mat display = cv::Mat::zeros(720, 1280, CV_8UC3);
-        cv::putText(display, "Waiting for trigger...", {350, 360},
-                    cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(255, 255, 255), 2);
+        cv::Mat display = cv::Mat::zeros(1080, 1920, CV_8UC3);
+        cv::putText(display, "Waiting for trigger...", {600, 540},
+                    cv::FONT_HERSHEY_SIMPLEX, 1.5, cv::Scalar(255, 255, 255), 2);
         cv::imshow("Example Demo - YOLO11n", display);
         cv::waitKey(1);
 
