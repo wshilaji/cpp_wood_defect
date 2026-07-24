@@ -388,6 +388,10 @@ bool HikvisionCamera::start(int width, int height,
 
     // ---- 4. 图像尺寸（如果需要修改） ----
     if (width > 0 && height > 0) {
+        // 先归零偏移量，否则 Width/Height 可能受已有 Offset 影响
+        MV_CC_SetIntValue(_handle, "OffsetX", 0);
+        MV_CC_SetIntValue(_handle, "OffsetY", 0);
+        // 再设宽高
         MV_CC_SetIntValue(_handle, "Width",  width);
         MV_CC_SetIntValue(_handle, "Height", height);
     }
