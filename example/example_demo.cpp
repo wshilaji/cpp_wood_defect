@@ -32,7 +32,7 @@
 // ============================================================
 constexpr const char* ENGINE_PATH = "example/models/yolo26n.engine";
 constexpr const char* LABEL_PATH  = "example/labels.txt";
-constexpr const char* CAMERA_IP   = "192.168.1.10";
+constexpr const char* CAMERA_IP   = "192.168.2.10";
 constexpr int         CAMERA_W    = 640;
 constexpr int         CAMERA_H    = 640;
 constexpr float       EXPOSURE_US = 5000.0f;
@@ -170,6 +170,10 @@ int main() {
             }
             if (frame.empty()) { std::cerr << "[Camera] 无帧" << std::endl; continue; }
 
+            // Debug: 保存原始帧（推理前），用于排查"全白"问题
+            cv::imwrite("example/debug_raw_" + std::to_string(total + 1) + ".jpg", frame);
+            // Debug end
+            
             auto t1 = std::chrono::steady_clock::now();
 
             // 推理
@@ -220,6 +224,13 @@ int main() {
                         cv::FONT_HERSHEY_SIMPLEX, 1,
                         is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 2);
             cv::imshow("Example Demo - YOLO11n", frame);
+
+            // Debug:同时保存图片，SSH 也能看
+            std::string save_path = "example/result_" + std::to_string(total) + ".jpg";
+            cv::imwrite(save_path, frame);
+            std::cout << "[Save] " << save_path << std::endl;
+            // Debug end
+
             if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
         }
 
