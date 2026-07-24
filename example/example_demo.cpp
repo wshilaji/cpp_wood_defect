@@ -20,6 +20,8 @@
 #include <exception>
 #include <sstream>
 #include <fstream>
+#include <poll.h>
+#include <unistd.h>
 
 #include "camera.h"
 #include "trtyolo.hpp"
