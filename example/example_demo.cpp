@@ -33,8 +33,10 @@
 constexpr const char* ENGINE_PATH = "example/models/yolo26n.engine";
 constexpr const char* LABEL_PATH  = "example/labels.txt";
 constexpr const char* CAMERA_IP   = "192.168.2.10";
-constexpr int         CAMERA_W    = 640;
-constexpr int         CAMERA_H    = 640;
+//constexpr int         CAMERA_W    = 640;
+//constexpr int         CAMERA_H    = 640;
+constexpr int         CAMERA_W    = 0;     // 0=不修改，用相机默认 2592×1944
+constexpr int         CAMERA_H    = 0;
 constexpr float       EXPOSURE_US = 5000.0f;
 constexpr float       GAIN_DB     = 0.0f;
 constexpr int         PLC_PORT    = 5000;
