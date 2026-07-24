@@ -62,6 +62,27 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Threads::Threads
 )
 
+# ---- Example Demo（YOLO11n COCO 模型 + 相机） ----
+add_executable(example_demo
+    example/example_demo.cpp
+    src/camera.cpp
+    src/plc_link.cpp
+    include/camera.h
+    include/plc_link.h
+)
+target_include_directories(example_demo PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${TRTYOLO_INCLUDE}
+    ${MVS_INCLUDE}
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(example_demo PRIVATE
+    ${TRTYOLO_LIB}
+    ${MVS_LIB}
+    ${OpenCV_LIBS}
+    Threads::Threads
+)
+
 message(STATUS "=== Wood Defect Detector v2.0 ===")
 message(STATUS "  TensorRT-YOLO: ${TRTYOLO_LIB}")
 message(STATUS "  MVS SDK:       ${MVS_LIB}")
