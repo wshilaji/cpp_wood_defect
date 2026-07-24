@@ -136,102 +136,109 @@ int main() {
         auto t0 = std::chrono::steady_clock::now();
 
         std::cout << "\n========================================" << std::endl;
-        std::cout << "  系统就绪 — 按回车或 TCP 触发拍照" << std::endl;
+        std::cout << "  系统就绪 — 实时显示中（ESC退出）" << std::endl;
         std::cout << "  规则: person>" << PERSON_MAX << " → NG | car>0 → NG" << std::endl;
         std::cout << "========================================\n" << std::endl;
 
-        while (running) {
-            // 组合等待: 终端输入 或 TCP 触发
-            bool triggered = plc.waitTrigger(500);
+        cv::namedWindow("Example Demo - YOLO11n", cv::WINDOW_NORMAL);
+        cv::resizeWindow("Example Demo - YOLO11n", 1280, 720);
 
-            // 检查终端输入（非阻塞）
+        // 初始显示空白帧，让窗口先出来
+        cv::Mat display = cv::Mat::zeros(720, 1280, CV_8UC3);
+        cv::putText(display, "Waiting for trigger...", {350, 360},
+                    cv::FONT_HERSHEY_SIMPLEX, 1.2, cv::Scalar(255, 255, 255), 2);
+        cv::imshow("Example Demo - YOLO11n", display);
+        cv::waitKey(1);
+
+        while (running) {
+            // 组合等待: TCP 或 终端输入
+            bool triggered = plc.waitTrigger(100);  // 100ms 超时，够快响应又不空转
+
             if (!triggered) {
                 struct pollfd pfd;
-                pfd.fd = STDIN_FILENO;
+                pfd.fd     = STDIN_FILENO;
                 pfd.events = POLLIN;
-                if (poll(&pfd, 1, 500) > 0) {
+                if (poll(&pfd, 1, 100) > 0) {
                     std::string line;
                     std::getline(std::cin, line);
-                    std::cout << "[Input] 手动触发" << std::endl;
                     triggered = true;
                 }
             }
 
-            if (!triggered) continue;
+            if (triggered) {
+                // ---- 拍照 + 推理 ----
+                cv::Mat frame;
+                int retry = 0;
+                while (retry < 20 && running) {
+                    frame = cam.read();
+                    if (!frame.empty()) break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    retry++;
+                }
 
-            // 从连续流中取一帧
-            cv::Mat frame;
-            int retry = 0;
-            while (retry < 20 && running) {
-                frame = cam.read();
-                if (!frame.empty()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                retry++;
+                if (!frame.empty()) {
+                    // Debug: 保存原始帧（推理前）
+                    cv::imwrite("example/debug_raw_" + std::to_string(total + 1) + ".jpg", frame);
+                    // Debug end
+                    auto t1 = std::chrono::steady_clock::now();
+
+                    // 推理
+                    trtyolo::Image img(frame.data, frame.cols, frame.rows);
+                    auto res = model.predict(img);
+
+                    // 统计
+                    int person_cnt = 0, car_cnt = 0;
+                    for (int i = 0; i < res.num; ++i) {
+                        if (res.classes[i] == 0) person_cnt++;
+                        if (res.classes[i] == 2) car_cnt++;
+                    }
+                    bool is_ng = (person_cnt > PERSON_MAX) || (car_cnt > 0);
+
+                    // 画框
+                    for (int i = 0; i < res.num; ++i) {
+                        const auto& b = res.boxes[i];
+                        int cls = res.classes[i];
+                        cv::Scalar color = (cls == 0) ? cv::Scalar(0, 255, 0) :
+                                           (cls == 2) ? cv::Scalar(0, 0, 255) :
+                                                        cv::Scalar(255, 255, 255);
+                        cv::rectangle(frame, cv::Point(b.left, b.top),
+                                      cv::Point(b.right, b.bottom), color, 2);
+                        cv::putText(frame, labels[cls] + " " + std::to_string(res.scores[i]).substr(0,4),
+                                    cv::Point(b.left, b.top - 5),
+                                    cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+                    }
+                    cv::putText(frame, is_ng ? "NG" : "OK", {10, 30},
+                                cv::FONT_HERSHEY_SIMPLEX, 1.2,
+                                is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 2);
+
+                    // 更新显示窗口
+                    display = frame.clone();
+                    cv::imshow("Example Demo - YOLO11n", display);
+
+                    // Debug: 保存带框结果图
+                    std::string save_path = "example/result_" + std::to_string(total + 1) + ".jpg";
+                    cv::imwrite(save_path, frame);
+                    std::cout << "[Save] " << save_path << std::endl;
+                    // Debug end
+
+                    // 回复 PLC
+                    if (is_ng) plc.sendNG(); else plc.sendOK();
+
+                    auto t2 = std::chrono::steady_clock::now();
+                    double ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
+                    total++;
+                    if (is_ng) ng_total++;
+
+                    std::cout << "[" << total << "] "
+                              << "person:" << person_cnt << " car:" << car_cnt
+                              << " → " << (is_ng ? "NG" : "OK")
+                              << " (" << std::fixed << std::setprecision(0) << ms << "ms)" << std::endl;
+                }
             }
-            if (frame.empty()) { std::cerr << "[Camera] 无帧" << std::endl; continue; }
 
-            // Debug: 保存原始帧（推理前），用于排查"全白"问题
-            cv::imwrite("example/debug_raw_" + std::to_string(total + 1) + ".jpg", frame);
-            // Debug end
-            
-            auto t1 = std::chrono::steady_clock::now();
-
-            // 推理
-            trtyolo::Image img(frame.data, frame.cols, frame.rows);
-            auto res = model.predict(img);
-
-            // 统计 person / car
-            int person_cnt = 0;
-            int car_cnt    = 0;
-            for (int i = 0; i < res.num; ++i) {
-                int cls = res.classes[i];
-                if (cls == 0) person_cnt++;   // COCO class 0 = person
-                if (cls == 2) car_cnt++;       // COCO class 2 = car
-            }
-
-            bool is_ng = (person_cnt > PERSON_MAX) || (car_cnt > 0);
-
-            // 发送结果
-            if (is_ng) plc.sendNG(); else plc.sendOK();
-
-            auto t2 = std::chrono::steady_clock::now();
-            double ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
-            total++;
-
-            // 日志
-            std::cout << "[" << total << "] "
-                      << "person:" << person_cnt << " car:" << car_cnt
-                      << " → " << (is_ng ? "NG" : "OK")
-                      << " (" << std::fixed << std::setprecision(0) << ms << "ms)" << std::endl;
-            if (is_ng) ng_total++;
-
-            // 可视化
-            for (int i = 0; i < res.num; ++i) {
-                const auto& b = res.boxes[i];
-                int cls = res.classes[i];
-                float score = res.scores[i];
-                cv::Scalar color = (cls == 0) ? cv::Scalar(0, 255, 0) :   // person=绿
-                                   (cls == 2) ? cv::Scalar(0, 0, 255) :   // car=红
-                                                cv::Scalar(255, 255, 255);
-                cv::rectangle(frame, cv::Point(b.left, b.top),
-                              cv::Point(b.right, b.bottom), color, 2);
-                cv::putText(frame, labels[cls] + " " + std::to_string(score).substr(0,4),
-                            cv::Point(b.left, b.top - 5),
-                            cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
-            }
-
-            cv::putText(frame, is_ng ? "NG" : "OK", {10, 30},
-                        cv::FONT_HERSHEY_SIMPLEX, 1,
-                        is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 2);
-            cv::imshow("Example Demo - YOLO11n", frame);
-
-            // Debug:同时保存图片，SSH 也能看
-            std::string save_path = "example/result_" + std::to_string(total) + ".jpg";
-            cv::imwrite(save_path, frame);
-            std::cout << "[Save] " << save_path << std::endl;
-            // Debug end
-
-            if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
+            // 保持窗口响应（ESC 退出）
+            int key = cv::waitKey(1) & 0xFF;
+            if (key == 27) { running = false; break; }
         }
 
         plc.stop();
