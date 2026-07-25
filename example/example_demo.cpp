@@ -35,9 +35,9 @@ constexpr const char* LABEL_PATH  = "example/labels.txt";
 constexpr const char* CAMERA_IP   = "192.168.2.10";
 //constexpr int         CAMERA_W    = 640;
 //constexpr int         CAMERA_H    = 640;
-constexpr int         CAMERA_W    = 2592;  // MV-CS050-60GC 原生分辨率
-constexpr int         CAMERA_H    = 1944;
-constexpr float       EXPOSURE_US = 80000.0f;
+constexpr int         CAMERA_W    = 0;  // MV-CS050-60GC 原生分辨率
+constexpr int         CAMERA_H    = 0;
+constexpr float       EXPOSURE_US = 100000.0f;
 constexpr float       GAIN_DB     = 0.0f;
 constexpr int         PLC_PORT    = 5000;
 
