@@ -83,6 +83,17 @@ target_link_libraries(example_demo PRIVATE
     Threads::Threads
 )
 
+# ---- 木板长宽测量 Demo（相机标定 + 矩形拟合） ----
+add_executable(demo_widthheight
+    demo_widthheight.cpp
+)
+target_include_directories(demo_widthheight PRIVATE
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(demo_widthheight PRIVATE
+    ${OpenCV_LIBS}
+)
+
 message(STATUS "=== Wood Defect Detector v2.0 ===")
 message(STATUS "  TensorRT-YOLO: ${TRTYOLO_LIB}")
 message(STATUS "  MVS SDK:       ${MVS_LIB}")
