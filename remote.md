@@ -26,3 +26,16 @@ sudo systemctl enable --now tailscaled
 # 3. 启动并登录
 sudo tailscale up
 执行完第三条命令后，终端会弹出一个类似 https://login.tailscale.com/a/xxxxxx 的链接。你把这个链接复制到浏览器里打开，用你刚才在 Mac 上用的那个 GitHub 账号 授权登录，两台设备就彻底打通了！
+
+https://console.tailscale.com/admin/machines  
+给nano的ip要设置成 直接右边 设置Disable key expiry 直接勾选就可以 让key不过期。默认是90天过期。 
+
+# mac.部分
+下载gui客户端。但是终端没法用命令行。 要在mac上这么一下
+nano ~/.zshrc
+在文件末尾添加这一行：
+alias tailscale='/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+mac 新版客户端有bug。 直接安装之后，每次电脑重启会要重新登陆。，之后ip会变。 
+好像是因为新版本之后的不在守护进程里。是用户级程序。每次扫盘会认为是新设备。
+讨论区帖子里面https://github.com/tailscale/tailscale/issues/17645 也有说这个问题。 改成旧版本就可以
+https://pkgs.tailscale.com/stable/?v=1.88.4    旧版本连接

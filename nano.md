@@ -266,7 +266,11 @@ print(torch.cuda.is_available())
 ### labelme 标注转 YOLO 格式
 
 ```bash
-labelme2yolo --source-path /root/autodl-tmp/your_labelme_data/ --output-path /root/autodl-tmp/yolo_dataset/
+labelme2yolo --json_dir all/ --val_size 0.15 --test_size 0.15
+```
+### autodl 模型训练
+```
+nohup yolo detect train data=/root/dys/YOLODataset/dataset.yaml model=yolo11n.pt epochs=300 imgsz=640 device=0 batch=16 amp=False > train.log 2>&1 &
 ```
 
 ---
