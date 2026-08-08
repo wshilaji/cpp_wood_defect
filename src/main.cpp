@@ -13,6 +13,8 @@
 #include <numeric>
 #include <exception>
 #include <sstream>
+#include <poll.h>
+#include <unistd.h>
 
 #include "config.h"
 #include "camera.h"
@@ -136,18 +138,40 @@ int main() {
             return -3;
         }
 
-        // ---- 5. 主循环（PLC 事件驱动） ----
+        // ---- 5. 主循环（PLC 事件驱动 / 回车后门） ----
         FPS fps;
         uint64_t total = 0, ng_total = 0;
         auto t0 = std::chrono::steady_clock::now();
 
-        std::cout << "系统就绪（等待 PLC 触发指令...）\n" << std::endl;
+        std::cout << "系统就绪（PLC 触发 / 回车触发，ESC 退出）\n" << std::endl;
 
         while (running) {
-            // 等待 PLC 发来触发指令（每秒检查 running 标志）
-            if (!plc.waitTrigger(1000)) {
-                if (!plc.isConnected()) {
-                    std::cout << "[PLC] 等待连接中..." << std::endl;
+            // 等待触发: PLC 指令 或 终端回车
+            bool triggered = false;
+
+            if (plc.waitTrigger(100)) {
+                triggered = true;
+            }
+
+            if (!triggered) {
+                struct pollfd pfd;
+                pfd.fd     = STDIN_FILENO;
+                pfd.events = POLLIN;
+                if (poll(&pfd, 1, 100) > 0) {
+                    std::string line;
+                    std::getline(std::cin, line);
+                    triggered = true;
+                    std::cout << "[后门] 回车触发" << std::endl;
+                }
+            }
+
+            if (!triggered) {
+                if (!plc.isConnected() && total == 0) {
+                    std::cout << "[PLC] 等待连接中...（按回车直接触发）" << std::endl;
+                }
+                // 保持窗口响应
+                if (Config::SHOW_DISPLAY) {
+                    if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
                 }
                 continue;
             }

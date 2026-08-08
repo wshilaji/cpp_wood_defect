@@ -37,16 +37,23 @@ std::string Postprocessor::severity(const Defect& d, const cv::Size& size) {
     float area = d.box.width * d.box.height;
     float ratio = area / (size.width * size.height);
 
-    if (d.name == "crack" || d.name == "edge_damage" || d.name == "rot")
+    // 裂缝 / 缺边 / 碎边 → 直接 NG
+    if (d.name == "liefeng" || d.name == "quebian" || d.name == "suibian")
         return "ng";
-    if (d.name == "hole")
+
+    // 洞疤 / 洞斑 → 面积判定
+    if (d.name == "dongba" || d.name == "dongban")
         return area > Config::HOLE_MAX_AREA ? "ng" : "warn";
-    if (d.name == "knot") {
+
+    // 节疤 → 面积占比判定
+    if (d.name == "jieba") {
         if (ratio > Config::KNOT_NG_RATIO)   return "ng";
         if (ratio > Config::KNOT_WARN_RATIO) return "warn";
         return "ok";
     }
-    if (d.name == "scratch") {
+
+    // 树纹 / 皮纹疤 / 薄纹 → 长宽比 + 长度判定
+    if (d.name == "shuwen" || d.name == "piwenba" || d.name == "baowen") {
         float L = std::max(d.box.width, d.box.height);
         float S = std::min(d.box.width, d.box.height);
         if (L / (S + 1e-6f) > Config::SCRATCH_ASPECT && L > Config::SCRATCH_NG_LEN)
@@ -54,22 +61,33 @@ std::string Postprocessor::severity(const Defect& d, const cv::Size& size) {
         if (L > Config::SCRATCH_WARN_LEN) return "warn";
         return "ok";
     }
-    if (d.name == "stain")
+
+    // 黑疤 / 黑斑 / 斑纹 / 斑纹疤 → 面积占比判定
+    if (d.name == "heiba" || d.name == "heiban" ||
+        d.name == "banwen" || d.name == "banwenba")
         return ratio > Config::STAIN_NG_RATIO ? "ng" : "warn";
 
+    // shupi（树皮）等其他 → 默认 OK
     return "ok";
 }
 
 void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {
     for (const auto& d : defects) {
-        cv::Scalar c(0, 255, 0);
-        if (d.name == "knot")        c = cv::Scalar(0, 255, 255);
-        else if (d.name == "crack")  c = cv::Scalar(0, 0, 255);
-        else if (d.name == "hole")   c = cv::Scalar(255, 0, 0);
-        else if (d.name == "stain")  c = cv::Scalar(255, 0, 255);
-        else if (d.name == "scratch")c = cv::Scalar(0, 165, 255);
-        else if (d.name == "edge_damage") c = cv::Scalar(0, 0, 128);
-        else if (d.name == "rot")    c = cv::Scalar(128, 0, 128);
+        cv::Scalar c(0, 255, 0);  // 默认绿色
+        if (d.name == "dongba")          c = cv::Scalar(0, 255, 255);   // 黄
+        else if (d.name == "dongban")    c = cv::Scalar(0, 200, 200);   // 浅黄
+        else if (d.name == "jieba")      c = cv::Scalar(255, 255, 0);   // 青
+        else if (d.name == "shupi")      c = cv::Scalar(128, 128, 128); // 灰
+        else if (d.name == "shuwen")     c = cv::Scalar(0, 165, 255);   // 橙
+        else if (d.name == "heiba")      c = cv::Scalar(0, 0, 255);     // 红
+        else if (d.name == "piwenba")    c = cv::Scalar(255, 0, 255);   // 品红
+        else if (d.name == "quebian")    c = cv::Scalar(0, 0, 128);     // 深红
+        else if (d.name == "baowen")     c = cv::Scalar(255, 165, 0);   // 蓝? 实际是BGR
+        else if (d.name == "liefeng")    c = cv::Scalar(0, 0, 200);     // 深红
+        else if (d.name == "suibian")    c = cv::Scalar(0, 128, 128);   // 深黄
+        else if (d.name == "heiban")     c = cv::Scalar(255, 0, 0);     // 蓝
+        else if (d.name == "banwen")     c = cv::Scalar(255, 0, 128);   // 紫
+        else if (d.name == "banwenba")   c = cv::Scalar(200, 0, 200);   // 浅紫
 
         cv::rectangle(frame, d.box.tl(), d.box.br(), c, 2);
 

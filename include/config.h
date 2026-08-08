@@ -16,22 +16,24 @@ constexpr int         CAMERA_TRIGGER   = 1;  // 0=连续 1=软触发 2=硬触发
 constexpr int         PLC_TCP_PORT     = 5000;
 
 // ---- 模型 ----
-constexpr const char* ENGINE_PATH    = "models/defect_model.trt";
+constexpr const char* ENGINE_PATH    = "models/best.engine";
 constexpr float       CONF_THRESHOLD = 0.5f;
 
 // ---- 类别（与模型输出 class_id 对应，0起始） ----
 const std::vector<std::string> CLASSES = {
-    "knot", "crack", "hole", "stain", "scratch", "edge_damage", "rot"
+    "dongba", "dongban", "jieba", "shupi", "shuwen",
+    "heiba", "piwenba", "quebian", "baowen", "liefeng",
+    "suibian", "heiban", "banwen", "banwenba"
 };
 
 // ---- 判定阈值 ----
-constexpr float HOLE_MAX_AREA   = 100.0f;
-constexpr float KNOT_NG_RATIO   = 0.05f;
+constexpr float HOLE_MAX_AREA   = 100.0f;   // dongba/dongban 洞类缺陷
+constexpr float KNOT_NG_RATIO   = 0.05f;    // jieba 节疤
 constexpr float KNOT_WARN_RATIO = 0.01f;
-constexpr float SCRATCH_NG_LEN  = 50.0f;
+constexpr float SCRATCH_NG_LEN  = 50.0f;    // shuwen/baowen 纹类缺陷
 constexpr float SCRATCH_WARN_LEN= 30.0f;
 constexpr float SCRATCH_ASPECT  = 5.0f;
-constexpr float STAIN_NG_RATIO  = 0.03f;
+constexpr float STAIN_NG_RATIO  = 0.03f;    // heiba/heiban/banwen 黑/斑类缺陷
 
 // ---- 输出 ----
 constexpr bool  SAVE_IMAGES   = true;
