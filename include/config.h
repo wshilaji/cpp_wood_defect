@@ -6,8 +6,8 @@ namespace Config {
 
 // ---- 海康相机 ----
 constexpr const char* CAMERA_IP        = "192.168.2.10";
-constexpr int         CAMERA_WIDTH     = 0;     // 0 = 原生分辨率 (MV-CS050-60GC: 2448×2048)
-constexpr int         CAMERA_HEIGHT    = 0;
+constexpr int         CAMERA_WIDTH     = 2448;   // MV-CS050-60GC 原生分辨率
+constexpr int         CAMERA_HEIGHT    = 2048;
 constexpr float       CAMERA_EXPOSURE  = 7000.0f;
 constexpr float       CAMERA_GAIN      = 0.0f;
 constexpr int         CAMERA_TRIGGER   = 1;  // 0=连续 1=软触发 2=硬触发
