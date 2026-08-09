@@ -1,14 +1,11 @@
 #include "plc_link.h"
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
 #include <iostream>
 #include <cerrno>
-#include <poll.h>
+#include <thread>
+#include <chrono>
 
 // ============================================================
 // 构造 / 析构
@@ -20,42 +17,40 @@ PlcLink::~PlcLink() {
 }
 
 // ============================================================
-// 启动 TCP Server
+// 启动 Modbus TCP Server
 // ============================================================
 bool PlcLink::start() {
-    _server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (_server_fd < 0) {
-        std::cerr << "[PLC] 创建 socket 失败: " << strerror(errno) << std::endl;
+    _ctx = modbus_new_tcp(nullptr, _port);  // nullptr → 监听所有网口
+    if (!_ctx) {
+        std::cerr << "[PLC] modbus_new_tcp 失败: " << modbus_strerror(errno) << std::endl;
         return false;
     }
 
-    int opt = 1;
-    setsockopt(_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    // 从站 ID = 1（FC5 主站配置里填 1）
+    modbus_set_slave(_ctx, 1);
 
-    sockaddr_in addr{};
-    addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port        = htons(_port);
+    // 调试关闭（生产环境不开，避免刷屏）
+    modbus_set_debug(_ctx, 0);
 
-    if (bind(_server_fd, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        std::cerr << "[PLC] bind 失败: " << strerror(errno) << std::endl;
-        close(_server_fd);
-        _server_fd = -1;
+    // 分配寄存器映射: 0 coil, 0 discrete input, 3 holding registers, 0 input registers
+    _mb_mapping = modbus_mapping_new(0, 0, 3, 0);
+    if (!_mb_mapping) {
+        std::cerr << "[PLC] modbus_mapping_new 失败: " << modbus_strerror(errno) << std::endl;
+        modbus_free(_ctx);
+        _ctx = nullptr;
         return false;
     }
 
-    if (listen(_server_fd, 1) < 0) {
-        std::cerr << "[PLC] listen 失败: " << strerror(errno) << std::endl;
-        close(_server_fd);
-        _server_fd = -1;
-        return false;
-    }
+    // 初始化寄存器值
+    _mb_mapping->tab_registers[0] = 0;   // HR0: 触发（0=空闲）
+    _mb_mapping->tab_registers[1] = 0;   // HR1: 结果（0=空闲）
+    _mb_mapping->tab_registers[2] = 1;   // HR2: 状态（1=就绪）
 
     _running.store(true);
-    _accept_thread = std::thread(&PlcLink::acceptLoop, this);
+    _server_thread = std::thread(&PlcLink::serverLoop, this);
 
-    std::cout << "[PLC] TCP Server 已启动, 端口=" << _port
-              << ", 等待 PLC 连接..." << std::endl;
+    std::cout << "[PLC] Modbus TCP Server 已启动, 端口=" << _port
+              << ", 从站ID=1, 等待 PLC 连接..." << std::endl;
     return true;
 }
 
@@ -65,133 +60,124 @@ bool PlcLink::start() {
 void PlcLink::stop() {
     _running.store(false);
 
-    // 关闭 client
-    {
-        std::lock_guard<std::mutex> lock(_client_mutex);
-        if (_client_fd >= 0) {
-            shutdown(_client_fd, SHUT_RDWR);
-            close(_client_fd);
-            _client_fd = -1;
-        }
+    // 1. 关闭监听 socket — 中断 modbus_tcp_accept 阻塞
+    if (_server_socket >= 0) {
+        shutdown(_server_socket, SHUT_RDWR);
+        close(_server_socket);
+        _server_socket = -1;
     }
 
-    // 关闭 server
-    if (_server_fd >= 0) {
-        shutdown(_server_fd, SHUT_RDWR);
-        close(_server_fd);
-        _server_fd = -1;
+    // 2. 关闭 modbus 连接 — 中断 modbus_receive 阻塞
+    if (_ctx) {
+        modbus_close(_ctx);
     }
 
-    if (_accept_thread.joinable()) {
-        _accept_thread.join();
+    // 3. 等待线程退出
+    if (_server_thread.joinable()) {
+        _server_thread.join();
     }
 
-    std::cout << "[PLC] TCP Server 已停止" << std::endl;
+    // 4. 释放资源
+    if (_mb_mapping) {
+        modbus_mapping_free(_mb_mapping);
+        _mb_mapping = nullptr;
+    }
+    if (_ctx) {
+        modbus_free(_ctx);
+        _ctx = nullptr;
+    }
+
+    std::cout << "[PLC] Modbus TCP Server 已停止" << std::endl;
 }
 
 // ============================================================
-// accept 后台线程
+// 后台线程：listen → accept → 请求处理循环
 // ============================================================
-void PlcLink::acceptLoop() {
+void PlcLink::serverLoop() {
+    _server_socket = modbus_tcp_listen(_ctx, 1);  // backlog=1，单客户端
+    if (_server_socket == -1) {
+        std::cerr << "[PLC] modbus_tcp_listen 失败: "
+                  << modbus_strerror(errno) << std::endl;
+        return;
+    }
+
     while (_running.load()) {
-        // 用 poll 等待连接，超时 1s 以便检查 _running
-        pollfd pfd{};
-        pfd.fd     = _server_fd;
-        pfd.events = POLLIN;
-
-        int ret = poll(&pfd, 1, 1000);
-        if (ret < 0) {
-            if (errno == EINTR) continue;
-            break;
-        }
-        if (ret == 0) continue;           // 超时，重试
-
-        sockaddr_in client_addr{};
-        socklen_t   addr_len = sizeof(client_addr);
-        int fd = accept(_server_fd, (sockaddr*)&client_addr, &addr_len);
-        if (fd < 0) {
+        // 等待 PLC 连接（阻塞，stop() 时 close(_server_socket) 会中断）
+        int rc = modbus_tcp_accept(_ctx, &_server_socket);
+        if (rc == -1) {
             if (!_running.load()) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             continue;
         }
 
-        // 断开旧连接
-        {
-            std::lock_guard<std::mutex> lock(_client_mutex);
-            if (_client_fd >= 0) {
-                shutdown(_client_fd, SHUT_RDWR);
-                close(_client_fd);
+        _client_active.store(true);
+        std::cout << "[PLC] Modbus TCP 客户端已连接" << std::endl;
+
+        // 请求处理循环
+        while (_running.load()) {
+            uint8_t query[MODBUS_TCP_MAX_ADU_LENGTH];
+            int len = modbus_receive(_ctx, query);
+            if (len == -1) {
+                // 客户端断开或出错
+                break;
             }
-            _client_fd = fd;
+
+            // 处理请求（读写映射）
+            {
+                std::lock_guard<std::mutex> lock(_mapping_mutex);
+                modbus_reply(_ctx, query, len, _mb_mapping);
+            }
         }
 
-        // TCP keepalive，防止 PLC 断电断连后 Nano 不知道
-        int ka = 1, ka_idle = 5, ka_intvl = 2, ka_cnt = 3;
-        setsockopt(fd, SOL_SOCKET,  SO_KEEPALIVE, &ka,       sizeof(ka));
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,  &ka_idle,  sizeof(ka_idle));
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &ka_intvl, sizeof(ka_intvl));
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,   &ka_cnt,   sizeof(ka_cnt));
-
-        std::cout << "[PLC] 客户端已连接: " << inet_ntoa(client_addr.sin_addr)
-                  << ":" << ntohs(client_addr.sin_port) << std::endl;
+        _client_active.store(false);
+        std::cout << "[PLC] Modbus TCP 客户端断开" << std::endl;
     }
 }
 
 // ============================================================
-// 是否已连接
+// 是否活跃
 // ============================================================
 bool PlcLink::isConnected() const {
-    std::lock_guard<std::mutex> lock(_client_mutex);
-    return _client_fd >= 0;
+    return _client_active.load();
 }
 
 // ============================================================
-// 等待 PLC 触发指令
+// 等待 PLC 触发（轮询 HR0）
 // ============================================================
 bool PlcLink::waitTrigger(int timeout_ms) {
-    int fd;
-    {
-        std::lock_guard<std::mutex> lock(_client_mutex);
-        fd = _client_fd;
+    constexpr int kPollInterval = 50;  // ms
+    int elapsed = 0;
+
+    while (timeout_ms < 0 || elapsed < timeout_ms) {
+        {
+            std::lock_guard<std::mutex> lock(_mapping_mutex);
+            if (_mb_mapping && _mb_mapping->tab_registers[0] == 1) {
+                _mb_mapping->tab_registers[0] = 0;   // 清触发
+                return true;
+            }
+        }
+
+        if (!_running.load()) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(kPollInterval));
+        elapsed += kPollInterval;
     }
 
-    if (fd < 0) return false;
+    return false;
+}
 
-    pollfd pfd{};
-    pfd.fd     = fd;
-    pfd.events = POLLIN;
-
-    int ret = poll(&pfd, 1, timeout_ms);
-    if (ret <= 0) return false;          // 超时或错误
-
-    char buf[256];
-    int n = recv(fd, buf, sizeof(buf) - 1, 0);
-    if (n <= 0) {
-        // PLC 断开
-        std::lock_guard<std::mutex> lock(_client_mutex);
-        close(_client_fd);
-        _client_fd = -1;
-        std::cerr << "[PLC] 连接断开" << std::endl;
-        return false;
-    }
-
-    buf[n] = '\0';
-    std::cout << "[PLC] 收到触发指令: " << buf << std::endl;
+// ============================================================
+// 写检测结果到 HR1
+// ============================================================
+bool PlcLink::sendOK() {
+    std::lock_guard<std::mutex> lock(_mapping_mutex);
+    if (!_mb_mapping) return false;
+    _mb_mapping->tab_registers[1] = 1;    // 1 = OK
     return true;
 }
 
-// ============================================================
-// 发送结果
-// ============================================================
-bool PlcLink::sendOK() {
-    std::lock_guard<std::mutex> lock(_client_mutex);
-    if (_client_fd < 0) return false;
-    int n = send(_client_fd, "OK\n", 3, MSG_NOSIGNAL);
-    return n == 3;
-}
-
 bool PlcLink::sendNG() {
-    std::lock_guard<std::mutex> lock(_client_mutex);
-    if (_client_fd < 0) return false;
-    int n = send(_client_fd, "NG\n", 3, MSG_NOSIGNAL);
-    return n == 3;
+    std::lock_guard<std::mutex> lock(_mapping_mutex);
+    if (!_mb_mapping) return false;
+    _mb_mapping->tab_registers[1] = 2;    // 2 = NG
+    return true;
 }

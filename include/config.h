@@ -12,8 +12,12 @@ constexpr float       CAMERA_EXPOSURE  = 7000.0f;
 constexpr float       CAMERA_GAIN      = 0.0f;
 constexpr int         CAMERA_TRIGGER   = 1;  // 0=连续 1=软触发 2=硬触发
 
-// ---- PLC TCP 通信 ----
-constexpr int         PLC_TCP_PORT     = 5000;
+// ---- PLC Modbus TCP 通信（Nano=从站, PLC=主站） ----
+// Holding Register 映射:
+//   HR0 — TRIGGER : PLC 写 1 触发拍照，Nano 清 0
+//   HR1 — RESULT   : 0=空闲, 1=OK, 2=NG
+//   HR2 — STATUS   : 0=未就绪, 1=就绪
+constexpr int         PLC_TCP_PORT     = 502;   // Modbus TCP 标准端口
 
 // ---- 模型 ----
 constexpr const char* ENGINE_PATH    = "models/best.engine";

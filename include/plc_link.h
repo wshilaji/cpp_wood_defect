@@ -1,45 +1,52 @@
 #pragma once
 
-#include <string>
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <modbus.h>
 
 /**
- * PLC TCP 通信模块
+ * PLC Modbus TCP 通信模块
  *
- * Nano 作为 TCP Server，PLC 作为 Client 连过来：
- *   - PLC → "TRIGGER\n" → Nano 触发相机拍照 + AI 检测
- *   - Nano → "OK\n" 或 "NG\n" → PLC 决定剔除/保留
+ * Nano 作为 Modbus TCP Server（从站），PLC（繁易 FC5）作为 Client（主站）。
+ *
+ * Holding Register 映射:
+ *   HR0 — TRIGGER : PLC 写 1 触发拍照，Nano 检测完后清 0
+ *   HR1 — RESULT   : 0=空闲, 1=OK, 2=NG
+ *   HR2 — STATUS   : 0=未就绪, 1=就绪
+ *
+ * PLC 侧只需配 Modbus TCP 主站，读写对应寄存器即可，无需写 Socket 自由口程序。
  */
 class PlcLink {
 public:
-    explicit PlcLink(int port);
+    explicit PlcLink(int port = 502);
     ~PlcLink();
 
-    /** 启动 TCP Server，在后台线程 accept */
+    /** 启动 Modbus TCP Server，后台线程处理请求 */
     bool start();
 
     /** 停止服务 */
     void stop();
 
-    /** 是否有 PLC 连上来 */
+    /** 是否有 PLC 连上来（最近一次请求是否活跃） */
     bool isConnected() const;
 
-    /** 等待 PLC 发来触发指令（阻塞，-1 表示永久等待） */
+    /** 等待 PLC 写 HR0=1（轮询，-1 表示永久等待） */
     bool waitTrigger(int timeout_ms = -1);
 
-    /** 发送检测结果给 PLC */
-    bool sendOK();
-    bool sendNG();
+    /** 写检测结果到 HR1 */
+    bool sendOK();    // HR1 ← 1
+    bool sendNG();    // HR1 ← 2
 
 private:
-    void acceptLoop();
+    void serverLoop();
 
-    int                 _port;
-    int                 _server_fd = -1;
-    int                 _client_fd = -1;
-    mutable std::mutex  _client_mutex;
-    std::atomic<bool>   _running{false};
-    std::thread         _accept_thread;
+    modbus_t*              _ctx          = nullptr;
+    modbus_mapping_t*      _mb_mapping   = nullptr;
+    int                    _server_socket = -1;
+    int                    _port;
+    std::atomic<bool>      _running{false};
+    std::atomic<bool>      _client_active{false};
+    std::thread            _server_thread;
+    mutable std::mutex     _mapping_mutex;
 };

@@ -11,6 +11,10 @@ endif()
 # ---- Threads ----
 find_package(Threads REQUIRED)
 
+# ---- libmodbus (Modbus TCP Server) ----
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(MODBUS REQUIRED libmodbus)
+
 # ---- TensorRT-YOLO 库（本地 third_party）----
 set(TRTYOLO_DIR "${CMAKE_SOURCE_DIR}/third_party/trtyolo"
     CACHE PATH "TensorRT-YOLO install 目录")
@@ -53,6 +57,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${TRTYOLO_INCLUDE}
     ${MVS_INCLUDE}
     ${OpenCV_INCLUDE_DIRS}
+    ${MODBUS_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -60,6 +65,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${MVS_LIB}
     ${OpenCV_LIBS}
     Threads::Threads
+    ${MODBUS_LIBRARIES}
 )
 
 # ---- Example Demo（YOLO11n COCO 模型 + 相机） ----
@@ -75,12 +81,14 @@ target_include_directories(example_demo PRIVATE
     ${TRTYOLO_INCLUDE}
     ${MVS_INCLUDE}
     ${OpenCV_INCLUDE_DIRS}
+    ${MODBUS_INCLUDE_DIRS}
 )
 target_link_libraries(example_demo PRIVATE
     ${TRTYOLO_LIB}
     ${MVS_LIB}
     ${OpenCV_LIBS}
     Threads::Threads
+    ${MODBUS_LIBRARIES}
 )
 
 # ---- 木板长宽测量 Demo（相机标定 + 矩形拟合） ----

@@ -39,7 +39,7 @@ constexpr int         CAMERA_W    = 0;  // MV-CS050-60GC 原生分辨率
 constexpr int         CAMERA_H    = 0;
 constexpr float       EXPOSURE_US = 7000.0f;
 constexpr float       GAIN_DB     = 0.0f;
-constexpr int         PLC_PORT    = 5000;
+constexpr int         PLC_PORT    = 502;   // Modbus TCP 标准端口
 
 // 判定规则
 constexpr int PERSON_MAX = 10;   // person 超过此数量 → NG
