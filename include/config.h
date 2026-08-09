@@ -36,12 +36,14 @@ constexpr float SCRATCH_ASPECT  = 5.0f;
 constexpr float STAIN_NG_RATIO  = 0.03f;    // heiba/heiban/banwen 黑/斑类缺陷
 
 // ---- 相机标定（木板长宽测量） ----
-constexpr float FX          = 8369.98f;
-constexpr float FY          = 8349.50f;
-constexpr float CX          = 1146.99f;
-constexpr float CY          = 895.55f;
-constexpr float DISTANCE_MM = 1270.0f;  // 相机到木板距离 mm
-const std::vector<double> DIST_COEFFS = {-0.998, 132.22, 0.0357, -0.01305, -4090.12};
+// fx = 镜头焦距8mm / 像元尺寸(8.8mm/2448px) ≈ 2225
+// fy = 8mm / (6.6mm/2048px) ≈ 2482
+constexpr float FX          = 2225.0f;
+constexpr float FY          = 2482.0f;
+constexpr float CX          = 1224.0f;   // 2448/2
+constexpr float CY          = 1024.0f;   // 2048/2
+constexpr float DISTANCE_MM = 1270.0f;   // 相机到木板距离 mm
+const std::vector<double> DIST_COEFFS = {0.0, 0.0, 0.0, 0.0, 0.0};
 
 // ---- 输出 ----
 constexpr bool  SAVE_IMAGES   = true;
