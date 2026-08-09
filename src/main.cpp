@@ -166,9 +166,9 @@ int main() {
             }
 
             if (!triggered) {
-                if (!plc.isConnected() && total == 0) {
-                    std::cout << "[PLC] 等待连接中...（按回车直接触发）" << std::endl;
-                }
+                // if (!plc.isConnected() && total == 0) {
+                //     std::cout << "[PLC] 等待连接中...（按回车直接触发）" << std::endl;
+                // }
                 // 保持窗口响应
                 if (Config::SHOW_DISPLAY) {
                     if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
