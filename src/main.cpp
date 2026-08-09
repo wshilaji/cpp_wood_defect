@@ -235,9 +235,9 @@ int main() {
             cv::Mat K = makeK(Config::FX, Config::FY, Config::CX, Config::CY);
             auto measure = measureBoard(img, K, Config::DISTANCE_MM);
             if (measure.valid) {
-                // 画木板轮廓（虚线效果，用绿色）
-                std::vector<std::vector<cv::Point>> c{measure.contour};
-                cv::drawContours(img, c, 0, cv::Scalar(0, 255, 0), 3);
+                // // 画木板轮廓
+                // std::vector<std::vector<cv::Point>> c{measure.contour};
+                // cv::drawContours(img, c, 0, cv::Scalar(0, 255, 0), 3);
                 // 画旋转矩形
                 cv::Point2f rc[4];
                 measure.rrect.points(rc);
