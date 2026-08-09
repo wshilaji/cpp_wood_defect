@@ -13,6 +13,7 @@
 #include <numeric>
 #include <exception>
 #include <sstream>
+#include <fstream>
 #include <poll.h>
 #include <unistd.h>
 
@@ -80,6 +81,17 @@ struct FPS {
         return avg > 0 ? 1000.0 / avg : 0;
     }
 };
+
+// ============================================================
+// GPU 温度读取（Jetson）
+// ============================================================
+static float getGPUTemp() {
+    std::ifstream f("/sys/devices/virtual/thermal/thermal_zone1/temp");
+    if (!f.is_open()) return -1;
+    int raw;
+    f >> raw;
+    return raw / 1000.0f;
+}
 
 // ============================================================
 // CLAHE 增强（LAB L通道）
@@ -229,9 +241,16 @@ int main() {
 
             // 显示
             if (Config::SHOW_DISPLAY) {
-                cv::putText(img, is_ng ? "NG" : "OK", {10, 30},
-                            cv::FONT_HERSHEY_SIMPLEX, 1,
-                            is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 2);
+                cv::putText(img, is_ng ? "NG" : "OK", {10, 60},
+                            cv::FONT_HERSHEY_SIMPLEX, 2,
+                            is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 4);
+                // GPU 温度
+                float temp = getGPUTemp();
+                std::ostringstream tss;
+                tss << "GPU " << std::fixed << std::setprecision(1) << temp << "C";
+                cv::putText(img, tss.str(), {10, 120},
+                            cv::FONT_HERSHEY_SIMPLEX, 1.2,
+                            cv::Scalar(0, 255, 255), 2);
                 cv::imshow("Wood Defect Detection", img);
                 if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
             }
