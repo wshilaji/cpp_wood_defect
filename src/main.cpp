@@ -145,6 +145,11 @@ int main() {
 
         std::cout << "系统就绪（PLC 触发 / 回车触发，ESC 退出）\n" << std::endl;
 
+        if (Config::SHOW_DISPLAY) {
+            cv::namedWindow("Wood Defect Detection", cv::WINDOW_NORMAL);
+            cv::resizeWindow("Wood Defect Detection", 1920, 1080);
+        }
+
         while (running) {
             // 等待触发: PLC 指令 或 终端回车
             bool triggered = false;
