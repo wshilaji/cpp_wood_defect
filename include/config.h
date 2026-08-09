@@ -36,10 +36,10 @@ constexpr float SCRATCH_ASPECT  = 5.0f;
 constexpr float STAIN_NG_RATIO  = 0.03f;    // heiba/heiban/banwen 黑/斑类缺陷
 
 // ---- 相机标定（木板长宽测量） ----
-// fx = 镜头焦距8mm / 像元尺寸(8.8mm/2448px) ≈ 2225
-// fy = 8mm / (6.6mm/2048px) ≈ 2482
-constexpr float FX          = 2225.0f;
-constexpr float FY          = 2482.0f;
+// MV-CS050-60GC 像元尺寸 3.45μm (正方形)
+// fx = fy = 8mm / 3.45μm ≈ 2319
+constexpr float FX          = 2319.0f;
+constexpr float FY          = 2319.0f;
 constexpr float CX          = 1224.0f;   // 2448/2
 constexpr float CY          = 1024.0f;   // 2048/2
 constexpr float DISTANCE_MM = 1270.0f;   // 相机到木板距离 mm
