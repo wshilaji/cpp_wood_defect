@@ -77,6 +77,8 @@ public:
     bool setExposureTime(float us);
     bool setGain(float db);
     bool setTriggerMode(int mode);
+    bool setPixelFormat(const std::string& format);
+    bool setGamma(bool enable, float gamma = 0.7f);
     float getExposureTime();
     float getGain();
 
@@ -92,9 +94,6 @@ private:
 
     /** 创建句柄并打开设备 */
     bool openDevice(int index);
-
-    /** 设置像素格式 */
-    bool setPixelFormat(const std::string& format);
 
     /** 关闭设备并销毁句柄 */
     void closeDevice();

@@ -5,7 +5,7 @@
 namespace Config {
 
 // ---- 海康相机 ----
-constexpr const char* CAMERA_IP        = "192.168.1.10";
+constexpr const char* CAMERA_IP        = "192.168.2.10";
 constexpr int         CAMERA_WIDTH     = 1920;
 constexpr int         CAMERA_HEIGHT    = 1080;
 constexpr float       CAMERA_EXPOSURE  = 5000.0f;

@@ -318,6 +318,22 @@ bool HikvisionCamera::setGain(float db) {
 }
 
 // ============================================================
+// 设置 Gamma
+// ============================================================
+bool HikvisionCamera::setGamma(bool enable, float gamma) {
+    if (!_handle) return false;
+    int ret = MV_CC_SetBoolValue(_handle, "GammaEnable", enable);
+    if (ret == MV_OK && enable) {
+        MV_CC_SetFloatValue(_handle, "Gamma", gamma);
+    }
+    if (ret == MV_OK) {
+        std::cout << "[Camera] Gamma: " << (enable ? "ON" : "OFF")
+                  << (enable ? " (" + std::to_string(gamma) + ")" : "") << std::endl;
+    }
+    return (ret == MV_OK);
+}
+
+// ============================================================
 // 获取曝光
 // ============================================================
 float HikvisionCamera::getExposureTime() {
@@ -377,6 +393,13 @@ bool HikvisionCamera::start(int width, int height,
         return false;
     }
 
+    // ---- 0. 像素格式: 优先 RGB8（相机硬件 ISP），失败则保持 Bayer ----
+    if (setPixelFormat("RGB8Packed")) {
+        // 更新内部状态
+        _pixel_format = PixelType_Gvsp_RGB8_Packed;
+        _is_bayer = false;
+    }
+
     // ---- 1. 触发模式 ----
     setTriggerMode(trigger_mode);
 
@@ -386,7 +409,10 @@ bool HikvisionCamera::start(int width, int height,
     // ---- 3. 增益 ----
     if (gain_db >= 0) setGain(gain_db);
 
-    // ---- 4. 图像尺寸（如果需要修改） ----
+    // ---- 4. Gamma（模拟 MVS 客户端显示效果） ----
+    setGamma(true, 0.7f);
+
+    // ---- 5. 图像尺寸（如果需要修改） ----
     if (width > 0 && height > 0) {
         // 先归零偏移量，否则 Width/Height 可能受已有 Offset 影响
         MV_CC_SetIntValue(_handle, "OffsetX", 0);
@@ -396,10 +422,10 @@ bool HikvisionCamera::start(int width, int height,
         MV_CC_SetIntValue(_handle, "Height", height);
     }
 
-    // ---- 5. 注册回调 ----
+    // ---- 6. 注册回调 ----
     if (!registerCallback()) return false;
 
-    // ---- 6. 开始取流 ----
+    // ---- 7. 开始取流 ----
     int ret = MV_CC_StartGrabbing(_handle);
     if (ret != MV_OK) {
         std::cerr << "[Camera] 开始取流失败, 错误码: 0x"
