@@ -88,9 +88,12 @@ struct FPS {
 // ============================================================
 static float getGPUTemp() {
     static float cached = -1;
-    static auto last = std::chrono::steady_clock::now();
+    static auto last = []() -> std::chrono::steady_clock::time_point {
+        // 首次调用强制读，设置为epoch强制过期
+        return std::chrono::steady_clock::time_point{};
+    }();
     auto now = std::chrono::steady_clock::now();
-    if (std::chrono::duration<double>(now - last).count() > 60.0) {
+    if (cached < 0 || std::chrono::duration<double>(now - last).count() > 60.0) {
         std::ifstream f("/sys/devices/virtual/thermal/thermal_zone1/temp");
         if (f.is_open()) {
             int raw;
@@ -159,6 +162,20 @@ int main() {
             return -3;
         }
 
+        // ---- 预热: 触发一次填满相机管线，避免首次拍照丢帧 ----
+        cam.softwareTrigger();
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        {
+            cv::Mat dummy;
+            int r = 0;
+            while (r < 20) {
+                dummy = cam.read();
+                if (!dummy.empty()) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                r++;
+            }
+        }
+
         // ---- 5. 主循环（PLC 事件驱动 / 回车后门） ----
         FPS fps;
         uint64_t total = 0, ng_total = 0;
@@ -210,7 +227,7 @@ int main() {
             // 读取图像
             cv::Mat frame;
             int retry = 0;
-            while (retry < 10 && running) {
+            while (retry < 20 && running) {
                 frame = cam.read();
                 if (!frame.empty()) break;
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
