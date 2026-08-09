@@ -22,6 +22,7 @@
 #include "infer.h"
 #include "postprocessor.h"
 #include "plc_link.h"
+#include "measure.h"
 
 static std::atomic<bool> running{true};
 
@@ -83,14 +84,22 @@ struct FPS {
 };
 
 // ============================================================
-// GPU 温度读取（Jetson）
+// GPU 温度读取（Jetson，1分钟缓存）
 // ============================================================
 static float getGPUTemp() {
-    std::ifstream f("/sys/devices/virtual/thermal/thermal_zone1/temp");
-    if (!f.is_open()) return -1;
-    int raw;
-    f >> raw;
-    return raw / 1000.0f;
+    static float cached = -1;
+    static auto last = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration<double>(now - last).count() > 60.0) {
+        std::ifstream f("/sys/devices/virtual/thermal/thermal_zone1/temp");
+        if (f.is_open()) {
+            int raw;
+            f >> raw;
+            cached = raw / 1000.0f;
+        }
+        last = now;
+    }
+    return cached;
 }
 
 // ============================================================
@@ -222,6 +231,20 @@ int main() {
             cv::Size sz(img.cols, img.rows);
             auto defects = post.process(res, img, sz);
 
+            // 木板长宽测量
+            cv::Mat K = makeK(Config::FX, Config::FY, Config::CX, Config::CY);
+            auto measure = measureBoard(img, K, Config::DISTANCE_MM);
+            if (measure.valid) {
+                // 画木板轮廓（虚线效果，用绿色）
+                std::vector<std::vector<cv::Point>> c{measure.contour};
+                cv::drawContours(img, c, 0, cv::Scalar(0, 255, 0), 3);
+                // 画旋转矩形
+                cv::Point2f rc[4];
+                measure.rrect.points(rc);
+                for (int i = 0; i < 4; ++i)
+                    cv::line(img, rc[i], rc[(i + 1) % 4], cv::Scalar(255, 0, 0), 2);
+            }
+
             // NG 判定
             bool is_ng = false;
             for (auto& d : defects)
@@ -251,6 +274,15 @@ int main() {
                 cv::putText(img, tss.str(), {10, 120},
                             cv::FONT_HERSHEY_SIMPLEX, 1.2,
                             cv::Scalar(0, 255, 255), 2);
+                // 木板长宽
+                if (measure.valid) {
+                    std::ostringstream mss;
+                    mss << std::fixed << std::setprecision(1)
+                        << measure.long_mm << " x " << measure.short_mm << " mm";
+                    cv::putText(img, mss.str(), {10, 180},
+                                cv::FONT_HERSHEY_SIMPLEX, 1.2,
+                                cv::Scalar(255, 255, 0), 2);
+                }
                 cv::imshow("Wood Defect Detection", img);
                 if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
             }
