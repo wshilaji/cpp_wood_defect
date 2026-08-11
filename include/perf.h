@@ -68,7 +68,11 @@ private:
     using Clock = std::chrono::steady_clock;
     using TP    = std::chrono::steady_clock::time_point;
 
-    struct Point { std::string name; TP tp; };
+    struct Point {
+        std::string name;
+        TP tp;
+        Point(const std::string& n, TP t) : name(n), tp(t) {}
+    };
     std::vector<Point> _points;
 
     static double msBetween(const TP& a, const TP& b) {
