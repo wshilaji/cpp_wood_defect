@@ -318,3 +318,8 @@ scp -r local_folder dys@100.64.45.96:/home/dys/muye/
 scp ~/Desktop/YOLODataset.tar.gz dys@<Jetson_Nano_IP>:/home/dys/muye/all/
 ```
 
+
+跟plc modbus通信需要装一个专门的lib  nano可以写一个自定义的tcp。plc那边太蠢。写一个
+```bash
+sudo apt install libmodbus-dev
+```

@@ -23,6 +23,7 @@
 #include "postprocessor.h"
 #include "plc_link.h"
 #include "measure.h"
+#include "perf.h"
 
 static std::atomic<bool> running{true};
 
@@ -219,7 +220,7 @@ int main() {
                 continue;
             }
 
-            auto t1 = std::chrono::steady_clock::now();
+            PerfTimer pt;
 
             // 软触发相机拍照
             cam.softwareTrigger();
@@ -238,11 +239,17 @@ int main() {
                 continue;
             }
 
+            pt.tick("拍照");
+
             // CLAHE 增强
             cv::Mat img = enhance(frame, 2.0f, 8);
 
+            pt.tick("增强");
+
             // 推理
             auto res = infer.detect(img);
+
+            pt.tick("推理");
 
             // 后处理 + 画框
             cv::Size sz(img.cols, img.rows);
@@ -262,6 +269,8 @@ int main() {
                     cv::line(img, rc[i], rc[(i + 1) % 4], cv::Scalar(255, 0, 0), 2);
             }
 
+            pt.tick("后处理");
+
             // NG 判定
             bool is_ng = false;
             for (auto& d : defects)
@@ -275,6 +284,9 @@ int main() {
                 plc.sendOK();
                 std::cout << "[PLC] → OK" << std::endl;
             }
+
+            pt.tick("PLC发送");
+            pt.dump();
 
             if (!defects.empty() && Config::SAVE_IMAGES && is_ng)
                 post.save(img, defects, Config::OUTPUT_DIR);
@@ -304,9 +316,9 @@ int main() {
                 if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
             }
 
-            // 统计
-            auto t2 = std::chrono::steady_clock::now();
-            fps.add(std::chrono::duration<double, std::milli>(t2 - t1).count());
+            // 统计（用 PerfTimer 计算的总耗时）
+            auto t_end = std::chrono::steady_clock::now();
+            fps.add(pt.elapsed());
             total++;
 
             if (total % 50 == 0)
