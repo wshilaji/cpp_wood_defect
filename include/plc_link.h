@@ -3,6 +3,7 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <condition_variable>
 #include <modbus.h>
 
 /**
@@ -31,7 +32,11 @@ public:
     /** 是否有 PLC 连上来（最近一次请求是否活跃） */
     bool isConnected() const;
 
-    /** 等待 PLC 写 HR0=1（轮询，-1 表示永久等待） */
+    /**
+     * 等待 PLC 写 HR0=1（条件变量通知，零延迟）
+     * @param timeout_ms 超时毫秒，-1 表示永久等待
+     * @return true=收到触发，false=超时或停止
+     */
     bool waitTrigger(int timeout_ms = -1);
 
     /** 写检测结果到 HR1 */
@@ -49,4 +54,11 @@ private:
     std::atomic<bool>      _client_active{false};
     std::thread            _server_thread;
     mutable std::mutex     _mapping_mutex;
+
+    // 事件驱动：条件变量替代轮询
+    std::mutex             _trigger_mutex;
+    std::condition_variable _trigger_cv;
+    std::atomic<bool>      _trigger_pending{false};
+    std::atomic<bool>      _waiting{false};
+    uint16_t               _prev_hr0 = 0;   // 边缘检测：只有 0→1 才触发
 };

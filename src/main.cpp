@@ -193,15 +193,16 @@ int main() {
             // 等待触发: PLC 指令 或 终端回车
             bool triggered = false;
 
-            if (plc.waitTrigger(100)) {
+            if (plc.waitTrigger(50)) {
                 triggered = true;
+                std::cout << "[PLC] 收到触发信号 → 拍照" << std::endl;
             }
 
             if (!triggered) {
                 struct pollfd pfd;
                 pfd.fd     = STDIN_FILENO;
                 pfd.events = POLLIN;
-                if (poll(&pfd, 1, 100) > 0) {
+                if (poll(&pfd, 1, 0) > 0) {
                     std::string line;
                     std::getline(std::cin, line);
                     triggered = true;
