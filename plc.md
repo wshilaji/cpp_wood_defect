@@ -235,6 +235,11 @@ sudo setcap 'cap_net_bind_service=+ep' ./build/wood_defect_detector
 getcap ./build/wood_defect_detector
 ```
 
+> **原理**：Linux 安全机制规定 1024 以下的端口只有 root 才能用。502 < 1024，普通用户启动会报 `Permission denied`。
+> `setcap` 给**这一个可执行文件**单独授权 `cap_net_bind_service`，允许它绑定特权端口，不需要整个程序跑在 root 下。
+>
+> **注意**：权限绑在文件上，每次 `cmake --build` 生成新二进制后权限就没了，需要重新跑一次 `setcap`。
+
 未授权时启动会报错：
 ```
 [PLC] modbus_tcp_listen 失败: Permission denied

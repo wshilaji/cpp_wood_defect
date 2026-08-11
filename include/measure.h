@@ -21,10 +21,15 @@ struct BoardMeasure {
 
 /**
  * OTSU 二值化 + 形态学 → 提取最大轮廓（木板主体）
+ * 降采样到 1/2 分辨率再处理，速度提升约 4 倍
  */
-inline std::vector<cv::Point> segmentBoard(const cv::Mat& bgr) {
+inline std::vector<cv::Point> segmentBoard(const cv::Mat& bgr, double scale = 0.5) {
+    // 降采样
+    cv::Mat small;
+    cv::resize(bgr, small, cv::Size(), scale, scale, cv::INTER_AREA);
+
     cv::Mat gray;
-    cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(small, gray, cv::COLOR_BGR2GRAY);
 
     cv::Mat blurred;
     cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0);
@@ -32,7 +37,8 @@ inline std::vector<cv::Point> segmentBoard(const cv::Mat& bgr) {
     cv::Mat binary;
     cv::threshold(blurred, binary, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
+    // 复用形态学核
+    static cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7, 7));
     cv::morphologyEx(binary, binary, cv::MORPH_CLOSE, kernel);
     cv::morphologyEx(binary, binary, cv::MORPH_OPEN, kernel);
 
@@ -45,6 +51,13 @@ inline std::vector<cv::Point> segmentBoard(const cv::Mat& bgr) {
         [](const std::vector<cv::Point>& a, const std::vector<cv::Point>& b) {
             return cv::contourArea(a) < cv::contourArea(b);
         });
+
+    // 坐标缩放回原图
+    double inv = 1.0 / scale;
+    for (auto& p : *largest) {
+        p.x = (int)(p.x * inv);
+        p.y = (int)(p.y * inv);
+    }
     return *largest;
 }
 
