@@ -243,7 +243,8 @@ int main() {
             pt.tick("拍照");
 
             // CLAHE 增强
-            cv::Mat img = enhance(frame, 2.0f, 8);
+            //cv::Mat img = enhance(frame, 2.0f, 8);
+            cv::Mat img = frame;
 
             pt.tick("增强");
 
