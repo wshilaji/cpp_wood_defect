@@ -2,6 +2,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <string>
+#include <cstdint>
 #include <atomic>
 #include <thread>
 #include <mutex>
@@ -67,6 +68,16 @@ public:
     /** 非阻塞读取最新一帧，无新帧时返回空 Mat */
     cv::Mat read();
 
+    /** 当前已收到的帧总数（触发前记下，之后用 readNewest 等本次触发的新帧） */
+    uint64_t frameCount();
+
+    /**
+     * 阻塞等待一帧序号 > since 的新帧（与本次触发对应），超时返回空 Mat
+     * @param since      触发前 frameCount() 的返回值
+     * @param timeout_ms 最长等待毫秒数
+     */
+    cv::Mat readNewest(uint64_t since, int timeout_ms = 500);
+
     /** 是否正在运行 */
     bool isRunning() const { return _running.load(); }
 
@@ -128,6 +139,7 @@ private:
     // 帧缓冲队列
     std::deque<cv::Mat>         _buffer;
     static constexpr size_t     _MAX_BUFFER = 3;
+    uint64_t                    _frame_count = 0;   // 已收到帧总数（回调里自增）
     std::mutex                  _mutex;
     std::condition_variable     _cv;
 };

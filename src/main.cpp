@@ -164,17 +164,10 @@ int main() {
         }
 
         // ---- 预热: 触发一次填满相机管线，避免首次拍照丢帧 ----
-        cam.softwareTrigger();
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
         {
-            cv::Mat dummy;
-            int r = 0;
-            while (r < 20) {
-                dummy = cam.read();
-                if (!dummy.empty()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                r++;
-            }
+            uint64_t since = cam.frameCount();
+            cam.softwareTrigger();
+            cam.readNewest(since, 500);   // 等预热帧到并丢弃
         }
 
         // ---- 5. 主循环（PLC 事件驱动 / 回车后门） ----
@@ -223,18 +216,12 @@ int main() {
 
             PerfTimer pt;
 
-            // 软触发相机拍照
+            // 软触发相机拍照：先记当前帧序号，触发后等本次触发的新帧，
+            // 避免拿到缓冲区里上一拍残留的旧帧（否则会滞后一帧）
+            uint64_t since = cam.frameCount();
             cam.softwareTrigger();
 
-            // 读取图像
-            cv::Mat frame;
-            int retry = 0;
-            while (retry < 20 && running) {
-                frame = cam.read();
-                if (!frame.empty()) break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                retry++;
-            }
+            cv::Mat frame = cam.readNewest(since, 500);
             if (frame.empty()) {
                 std::cerr << "[Camera] 触发后未获取到图像" << std::endl;
                 continue;

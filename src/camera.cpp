@@ -471,6 +471,26 @@ cv::Mat HikvisionCamera::read() {
 }
 
 // ============================================================
+// 当前已收到的帧总数
+// ============================================================
+uint64_t HikvisionCamera::frameCount() {
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _frame_count;
+}
+
+// ============================================================
+// 阻塞等待一帧序号 > since 的新帧（与本次触发对应）
+// ============================================================
+cv::Mat HikvisionCamera::readNewest(uint64_t since, int timeout_ms) {
+    std::unique_lock<std::mutex> lock(_mutex);
+    if (!_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms),
+                      [&] { return _frame_count > since; })) {
+        return cv::Mat();   // 超时，未等到新帧
+    }
+    return _buffer.back().clone();
+}
+
+// ============================================================
 // SDK 图像回调入口 (static → handleImage)
 // ============================================================
 void __stdcall HikvisionCamera::onImageCallback(unsigned char* pData,
@@ -521,6 +541,8 @@ void HikvisionCamera::handleImage(unsigned char* pData,
         while (_buffer.size() > _MAX_BUFFER) {
             _buffer.pop_front();
         }
+        _frame_count++;
+        _cv.notify_all();
     }
 }
 
