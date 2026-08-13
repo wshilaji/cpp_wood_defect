@@ -43,6 +43,9 @@ public:
     bool sendOK();    // HR1 ← 1
     bool sendNG();    // HR1 ← 2
 
+    /** 清空检测结果（HR1 ← 0，空闲），新一板开始时调用，避免 PLC 读到上一板残留结果 */
+    bool resetResult();
+
 private:
     void serverLoop();
 

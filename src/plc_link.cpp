@@ -231,3 +231,10 @@ bool PlcLink::sendNG() {
     _mb_mapping->tab_registers[1] = 2;    // 2 = NG
     return true;
 }
+
+bool PlcLink::resetResult() {
+    std::lock_guard<std::mutex> lock(_mapping_mutex);
+    if (!_mb_mapping) return false;
+    _mb_mapping->tab_registers[1] = 0;    // 0 = 空闲
+    return true;
+}

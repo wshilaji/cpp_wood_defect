@@ -214,6 +214,9 @@ int main() {
                 continue;
             }
 
+            // 新一板开始：先清空上一板结果（HR1←0），避免 PLC 在本周期读到旧状态
+            plc.resetResult();
+
             PerfTimer pt;
 
             // 软触发相机拍照：先记当前帧序号，触发后等本次触发的新帧，
