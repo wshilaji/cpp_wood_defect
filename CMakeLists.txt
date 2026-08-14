@@ -102,6 +102,20 @@ target_link_libraries(demo_widthheight PRIVATE
     ${OpenCV_LIBS}
 )
 
+# ---- Bayer 采集测速 & 对比 Demo（独立，仅 OpenCV + MVS） ----
+add_executable(demo_bayer_capture
+    demo_bayer_capture.cpp
+)
+target_include_directories(demo_bayer_capture PRIVATE
+    ${MVS_INCLUDE}
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(demo_bayer_capture PRIVATE
+    ${MVS_LIB}
+    ${OpenCV_LIBS}
+    Threads::Threads
+)
+
 message(STATUS "=== Wood Defect Detector v2.0 ===")
 message(STATUS "  TensorRT-YOLO: ${TRTYOLO_LIB}")
 message(STATUS "  MVS SDK:       ${MVS_LIB}")
