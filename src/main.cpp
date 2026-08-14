@@ -309,7 +309,7 @@ int main() {
                     uint64_t ok_cnt = total - ng_total;
                     double rate = total > 0 ? (100.0 * ok_cnt / total) : 0.0;
                     std::ostringstream oss;
-                    oss << "合格率 " << ok_cnt << "/" << total
+                    oss << "Pass rate " << ok_cnt << "/" << total
                         << " (" << std::fixed << std::setprecision(1) << rate << "%)";
                     cv::putText(img, oss.str(), {10, 185},
                                 cv::FONT_HERSHEY_SIMPLEX, 1.2,
