@@ -293,7 +293,7 @@ int main() {
                             is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 4);
                 // NG 原因
                 if (is_ng) {
-                    cv::putText(img, ng_reason, {10, 95},
+                    cv::putText(img, ng_reason, {10, 105},
                                 cv::FONT_HERSHEY_SIMPLEX, 1.0,
                                 cv::Scalar(0, 0, 255), 2);
                 }
@@ -301,7 +301,7 @@ int main() {
                 float temp = getGPUTemp();
                 std::ostringstream tss;
                 tss << "GPU " << std::fixed << std::setprecision(1) << temp << "C";
-                cv::putText(img, tss.str(), {10, 120},
+                cv::putText(img, tss.str(), {10, 145},
                             cv::FONT_HERSHEY_SIMPLEX, 1.2,
                             cv::Scalar(0, 255, 255), 2);
                 // 合格率 OK/总数
@@ -309,9 +309,9 @@ int main() {
                     uint64_t ok_cnt = total - ng_total;
                     double rate = total > 0 ? (100.0 * ok_cnt / total) : 0.0;
                     std::ostringstream oss;
-                    oss << "OK " << ok_cnt << "/" << total
+                    oss << "合格率 " << ok_cnt << "/" << total
                         << " (" << std::fixed << std::setprecision(1) << rate << "%)";
-                    cv::putText(img, oss.str(), {10, 150},
+                    cv::putText(img, oss.str(), {10, 185},
                                 cv::FONT_HERSHEY_SIMPLEX, 1.2,
                                 cv::Scalar(0, 255, 0), 2);
                 }
@@ -320,7 +320,7 @@ int main() {
                     std::ostringstream mss;
                     mss << std::fixed << std::setprecision(1)
                         << measure.long_mm << " x " << measure.short_mm << " mm";
-                    cv::putText(img, mss.str(), {10, 180},
+                    cv::putText(img, mss.str(), {10, 225},
                                 cv::FONT_HERSHEY_SIMPLEX, 1.2,
                                 cv::Scalar(255, 255, 0), 2);
                 }
