@@ -2,6 +2,7 @@
 #include "config.h"
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <sstream>
 #include <iomanip>
@@ -32,7 +33,7 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
     return defects;
 }
 
-bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& size) const {
+bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& size, std::string& reason) const {
     int   jieba_cnt   = 0;
     int   dongba_cnt  = 0;
     float dongban_sum = 0.0f;
@@ -49,22 +50,26 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
             dongban_sum += area;
         } else if (d.name == "quebian") {
             quebian_sum += area;
-        // } else if (d.name == "shuwen" || d.name == "piwenba" || d.name == "baowen") {
-        //     // 树纹 / 皮纹疤 / 薄纹 → 长宽比 + 长度判定
-        //     float L = std::max(d.box.width, d.box.height);
-        //     float S = std::min(d.box.width, d.box.height);
-        //     if (L / (S + 1e-6f) > Config::SCRATCH_ASPECT && L > Config::SCRATCH_NG_LEN)
-        //         return true;
-        // }
+        }
         // 其它类默认 OK，不判 NG
     }
 
-    if (jieba_cnt   > Config::JIEBA_MAX_COUNT)  return true;
-    if (dongba_cnt  > Config::DONGBA_MAX_COUNT) return true;
-    if (dongban_sum / total_area > Config::DONGBAN_AREA_RATIO) return true;
-    if (quebian_sum / total_area > Config::QUEBIAN_AREA_RATIO) return true;
+    std::vector<std::string> reasons;
+    if (jieba_cnt > Config::JIEBA_MAX_COUNT)
+        reasons.push_back("jieba>" + std::to_string(Config::JIEBA_MAX_COUNT));
+    if (dongba_cnt > Config::DONGBA_MAX_COUNT)
+        reasons.push_back("dongba>" + std::to_string(Config::DONGBA_MAX_COUNT));
+    if (dongban_sum / total_area > Config::DONGBAN_AREA_RATIO)
+        reasons.push_back("dongban>" + std::to_string(std::lround(Config::DONGBAN_AREA_RATIO * 100.0)) + "%");
+    if (quebian_sum / total_area > Config::QUEBIAN_AREA_RATIO)
+        reasons.push_back("quebian>" + std::to_string(std::lround(Config::QUEBIAN_AREA_RATIO * 100.0)) + "%");
 
-    return false;
+    reason.clear();
+    for (size_t i = 0; i < reasons.size(); ++i) {
+        if (i) reason += " ";
+        reason += reasons[i];
+    }
+    return !reason.empty();
 }
 
 void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {

@@ -266,8 +266,10 @@ int main() {
             pt.tick("测量");
 
             // NG 判定（jieba/dongba 按数量，dongban/quebian 按面积占比）
-            bool is_ng = post.isNG(defects, sz);
+            std::string ng_reason;
+            bool is_ng = post.isNG(defects, sz, ng_reason);
             if (is_ng) ng_total++;
+            total++;
 
             // 发送结果给 PLC
             if (is_ng) {
@@ -289,6 +291,12 @@ int main() {
                 cv::putText(img, is_ng ? "NG" : "OK", {10, 60},
                             cv::FONT_HERSHEY_SIMPLEX, 2,
                             is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 4);
+                // NG 原因
+                if (is_ng) {
+                    cv::putText(img, ng_reason, {10, 95},
+                                cv::FONT_HERSHEY_SIMPLEX, 1.0,
+                                cv::Scalar(0, 0, 255), 2);
+                }
                 // GPU 温度
                 float temp = getGPUTemp();
                 std::ostringstream tss;
@@ -296,6 +304,17 @@ int main() {
                 cv::putText(img, tss.str(), {10, 120},
                             cv::FONT_HERSHEY_SIMPLEX, 1.2,
                             cv::Scalar(0, 255, 255), 2);
+                // 合格率 OK/总数
+                {
+                    uint64_t ok_cnt = total - ng_total;
+                    double rate = total > 0 ? (100.0 * ok_cnt / total) : 0.0;
+                    std::ostringstream oss;
+                    oss << "OK " << ok_cnt << "/" << total
+                        << " (" << std::fixed << std::setprecision(1) << rate << "%)";
+                    cv::putText(img, oss.str(), {10, 150},
+                                cv::FONT_HERSHEY_SIMPLEX, 1.2,
+                                cv::Scalar(0, 255, 0), 2);
+                }
                 // 木板长宽
                 if (measure.valid) {
                     std::ostringstream mss;
@@ -312,7 +331,6 @@ int main() {
             // 统计（用 PerfTimer 计算的总耗时）
             auto t_end = std::chrono::steady_clock::now();
             fps.add(pt.elapsed());
-            total++;
 
             if (total % 50 == 0)
                 std::cout << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
