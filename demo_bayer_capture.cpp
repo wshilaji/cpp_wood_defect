@@ -26,6 +26,7 @@
 #include <iomanip>
 #include <chrono>
 #include <cstring>
+#include <cmath>
 #include <string>
 #include <thread>
 #include <mutex>
@@ -109,16 +110,49 @@ static void __stdcall onFrame(unsigned char* pData,
 }
 
 // ============================================================
-// 像素格式 → OpenCV debayer 转换码
+// 像素格式 → OpenCV 边缘感知 demosaic 转换码
 // ============================================================
-static int bayerCodeFor(unsigned int fmt) {
+static int bayerCodeEA(unsigned int fmt) {
     switch (fmt) {
-        case PixelType_Gvsp_BayerRG8: return cv::COLOR_BayerRG2BGR;
-        case PixelType_Gvsp_BayerGR8: return cv::COLOR_BayerGR2BGR;
-        case PixelType_Gvsp_BayerGB8: return cv::COLOR_BayerGB2BGR;
-        case PixelType_Gvsp_BayerBG8: return cv::COLOR_BayerBG2BGR;
-        default:                      return cv::COLOR_BayerRG2BGR;
+        case PixelType_Gvsp_BayerRG8: return cv::COLOR_BayerRG2BGR_EA;
+        case PixelType_Gvsp_BayerGR8: return cv::COLOR_BayerGR2BGR_EA;
+        case PixelType_Gvsp_BayerGB8: return cv::COLOR_BayerGB2BGR_EA;
+        case PixelType_Gvsp_BayerBG8: return cv::COLOR_BayerBG2BGR_EA;
+        default:                      return cv::COLOR_BayerRG2BGR_EA;
     }
+}
+
+// ============================================================
+// Nano 端轻 ISP：边缘感知 demosaic + 灰世界白平衡 + gamma
+// 相机 ISP 在 RGB8 下做 demosaic/WB/CCM/gamma；裸 cvtColor 只有 demosaic，
+// 缺 WB/gamma 所以偏绿、偏暗、边缘有伪彩。这里补上（约 20~30ms）。
+// ============================================================
+static cv::Mat debayerIsp(const cv::Mat& raw, unsigned int fmt) {
+    cv::Mat bgr;
+
+    // 1. 边缘感知 demosaic（比双线性清晰、伪彩少）
+    cv::cvtColor(raw, bgr, bayerCodeEA(fmt));
+
+    // 2. 灰世界白平衡：拉平三通道均值，去掉 Bayer 无 WB 导致的偏色
+    cv::Scalar m = cv::mean(bgr);
+    double avg = (m[0] + m[1] + m[2]) / 3.0;
+    if (avg > 1.0) {
+        double gB = avg / std::max(m[0], 1e-6);
+        double gG = avg / std::max(m[1], 1e-6);
+        double gR = avg / std::max(m[2], 1e-6);
+        cv::multiply(bgr, cv::Scalar(gB, gG, gR), bgr);
+    }
+
+    // 3. gamma 0.7（相机 ISP 同款，线性图偏暗，这里拉开；对不上就改这个值或换成 1/0.7）
+    static cv::Mat lut;
+    if (lut.empty()) {
+        lut.create(1, 256, CV_8UC1);
+        for (int i = 0; i < 256; ++i)
+            lut.at<uchar>(i) = cv::saturate_cast<uchar>(255.0 * std::pow(i / 255.0, 0.7));
+    }
+    cv::LUT(bgr, lut, bgr);
+
+    return bgr;
 }
 
 static double ms(const std::chrono::steady_clock::time_point& a,
@@ -151,13 +185,13 @@ static bool grabOne(void* handle, CaptureState& st, int timeout_ms, Frame& out) 
     return true;
 }
 
-// 原始数据 → BGR（RGB8 转色序，Bayer 做 debayer）
+// 原始数据 → BGR（RGB8 转色序，Bayer 走轻 ISP）
 static cv::Mat toBGR(const cv::Mat& raw, unsigned int fmt) {
     cv::Mat bgr;
     if (fmt == PixelType_Gvsp_RGB8_Packed) {
         cv::cvtColor(raw, bgr, cv::COLOR_RGB2BGR);
     } else {
-        cv::cvtColor(raw, bgr, bayerCodeFor(fmt));
+        bgr = debayerIsp(raw, fmt);
     }
     return bgr;
 }
@@ -324,7 +358,7 @@ int main(int argc, char** argv) {
 
                 std::cout << "[" << std::setw(2) << i << "] 拍照(触发→帧): "
                           << std::fixed << std::setprecision(1) << f.capture_ms
-                          << "ms | debayer: " << debayer_ms
+                          << "ms | ISP: " << debayer_ms
                           << "ms | 总计: " << (f.capture_ms + debayer_ms) << "ms" << std::endl;
             }
             MV_CC_StopGrabbing(handle);
@@ -341,7 +375,7 @@ int main(int argc, char** argv) {
 
     if (bayer_ok) {
         std::cout << "Bayer(Nano):    拍照=" << bayer_capture / N
-                  << "ms  debayer=" << bayer_debayer / N
+                  << "ms  ISP=" << bayer_debayer / N
                   << "ms  总计=" << (bayer_capture + bayer_debayer) / N << "ms" << std::endl;
     } else {
         std::cout << "Bayer: 不可用（详见上方报错）" << std::endl;

@@ -9,7 +9,6 @@ struct Defect {
     float conf;
     cv::Rect box;
     std::string name;
-    std::string level;  // ok / warn / ng
 };
 
 class Postprocessor {
@@ -20,7 +19,8 @@ public:
     std::vector<Defect> process(const trtyolo::DetectRes& res,
                                 cv::Mat& frame, const cv::Size& size);
 
-    std::string severity(const Defect& d, const cv::Size& size);
+    /** 整体 NG 判定：jieba/dongba 按数量，dongban/quebian 按面积占比(占整图)，其它默认 OK */
+    bool isNG(const std::vector<Defect>& defects, const cv::Size& size) const;
     void draw(cv::Mat& frame, const std::vector<Defect>& defects);
     std::string save(const cv::Mat& frame, const std::vector<Defect>& defects,
                      const std::string& dir);

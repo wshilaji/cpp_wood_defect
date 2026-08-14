@@ -31,13 +31,14 @@ const std::vector<std::string> CLASSES = {
 };
 
 // ---- 判定阈值 ----
-constexpr float HOLE_MAX_AREA   = 100.0f;   // dongba/dongban 洞类缺陷
-constexpr float KNOT_NG_RATIO   = 0.05f;    // jieba 节疤
-constexpr float KNOT_WARN_RATIO = 0.01f;
-constexpr float SCRATCH_NG_LEN  = 50.0f;    // shuwen/baowen 纹类缺陷
-constexpr float SCRATCH_WARN_LEN= 30.0f;
-constexpr float SCRATCH_ASPECT  = 5.0f;
-constexpr float STAIN_NG_RATIO  = 0.03f;    // heiba/heiban/banwen 黑/斑类缺陷
+constexpr float SCRATCH_NG_LEN  = 50.0f;    // shuwen/piwenba/baowen 纹类缺陷:长边超阈值且长宽比超阈值判 NG
+constexpr float SCRATCH_ASPECT  = 5.0f;     // 纹类缺陷长宽比阈值
+
+// ---- 聚合判定（数量 / 面积占比）----
+constexpr int   JIEBA_MAX_COUNT  = 8;        // jieba 节疤:数量 > 此值判 NG
+constexpr int   DONGBA_MAX_COUNT = 8;        // dongba 洞疤:数量 > 此值判 NG
+constexpr float DONGBAN_AREA_RATIO = 0.01f;  // dongban 洞板:面积和占整图比例 > 1% 判 NG
+constexpr float QUEBIAN_AREA_RATIO = 0.01f;  // quebian 缺边:面积和占整图比例 > 1% 判 NG
 
 // ---- 相机标定（木板长宽测量） ----
 // MV-CS050-60GC 像元尺寸 3.45μm (正方形)

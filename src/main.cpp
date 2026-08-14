@@ -265,10 +265,9 @@ int main() {
 
             pt.tick("测量");
 
-            // NG 判定
-            bool is_ng = false;
-            for (auto& d : defects)
-                if (d.level == "ng") { is_ng = true; ng_total++; break; }
+            // NG 判定（jieba/dongba 按数量，dongban/quebian 按面积占比）
+            bool is_ng = post.isNG(defects, sz);
+            if (is_ng) ng_total++;
 
             // 发送结果给 PLC
             if (is_ng) {
