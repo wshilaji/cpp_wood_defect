@@ -247,8 +247,6 @@ int main() {
             cv::Size sz(img.cols, img.rows);
             auto defects = post.process(res, img, sz);
 
-            pt.tick("画框");
-
             // 木板长宽测量
             cv::Mat K = makeK(Config::FX, Config::FY, Config::CX, Config::CY);
             auto measure = measureBoard(img, K, Config::DISTANCE_MM);
@@ -280,7 +278,6 @@ int main() {
                 std::cout << "[PLC] → OK" << std::endl;
             }
 
-            pt.tick("PLC发送");
             pt.dump();
 
             if (!defects.empty() && Config::SAVE_IMAGES && is_ng)
