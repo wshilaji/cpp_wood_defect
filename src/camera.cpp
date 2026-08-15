@@ -358,20 +358,38 @@ float HikvisionCamera::getGain() {
 }
 
 // ============================================================
-// 获取相机温度（DeviceTemperature 节点，单位 °C）
-// 标准是 Float 节点；部分型号是 Int 节点（值 = 0.1°C），做兼容
+// 获取相机温度（单位 °C）
+// 温度节点名因型号/固件而异（DeviceTemperature / SensorTemperature / CameraTemperature ...），
+// 且常被固件标成 visible=false，MVS 普通参数页看不到、只有完整节点树才有。
+// 这里逐个尝试常见节点名，第一个能读到的即锁存，之后每次只读那一个，不重复探测。
+// 节点是 Float 单位 °C；少数型号是 Int（值 = 0.1°C），做兼容。
+// 全部失败返回 -1（调用方界面只显示 GPU 温度，并限频放弃重试）。
 // ============================================================
 float HikvisionCamera::getTemperature() {
     if (!_handle) return -1.0f;
 
-    MVCC_FLOATVALUE fval = {0};
-    if (MV_CC_GetFloatValue(_handle, "DeviceTemperature", &fval) == MV_OK)
-        return fval.fCurValue;
+    static const char* const kTempNodes[] = {
+        "DeviceTemperature",
+        "SensorTemperature",
+        "CameraTemperature",
+        "DeviceSensorTemperature",
+    };
 
-    MVCC_INTVALUE ival = {0};
-    if (MV_CC_GetIntValue(_handle, "DeviceTemperature", &ival) == MV_OK)
-        return (float)ival.nCurValue / 10.0f;
+    static const char* settled = nullptr;   // 首次命中的节点名，之后只读它
+    if (settled) {
+        MVCC_FLOATVALUE fval = {0};
+        if (MV_CC_GetFloatValue(_handle, settled, &fval) == MV_OK) return fval.fCurValue;
+        MVCC_INTVALUE ival = {0};
+        if (MV_CC_GetIntValue(_handle, settled, &ival) == MV_OK)   return (float)ival.nCurValue / 10.0f;
+        return -1.0f;
+    }
 
+    for (const char* name : kTempNodes) {
+        MVCC_FLOATVALUE fval = {0};
+        if (MV_CC_GetFloatValue(_handle, name, &fval) == MV_OK) { settled = name; return fval.fCurValue; }
+        MVCC_INTVALUE ival = {0};
+        if (MV_CC_GetIntValue(_handle, name, &ival) == MV_OK) { settled = name; return (float)ival.nCurValue / 10.0f; }
+    }
     return -1.0f;
 }
 

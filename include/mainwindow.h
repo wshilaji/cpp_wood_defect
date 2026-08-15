@@ -25,7 +25,7 @@ public:
     void setImage(const cv::Mat& bgr);
     void setResult(bool ng, const QString& reason);
     void setStats(quint64 total, quint64 ng);
-    void setTemps(double gpu_c, double cam_c);   // GPU + 相机温度，负值显示 --
+    void setTemps(double gpu_c, double cam_c);   // GPU 温度；相机温度 >=0 才拼接显示（MV-CS060 无温度节点只显示 GPU）
     void setMeasure(double long_mm, double short_mm);
     void setCycleMs(double ms);
 

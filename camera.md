@@ -3,13 +3,13 @@
 ## 一、硬件与网络
 
 ```
-相机 (MV-CS050-60GC) ──网线──→ Nano (enP8p1s0)
+相机 (MV-CS060-10GC) ──网线──→ Nano (enP8p1s0)
    192.168.2.10               192.168.2.100
 ```
 
 | 项 | 值 |
 |------|-----|
-| 相机型号 | 海康 MV-CS050-60GC（GigE） |
+| 相机型号 | 海康 MV-CS060-10GC（GigE，6MP，IMX178） |
 | 相机 IP | `192.168.2.10` |
 | Nano 网卡 | `enP8p1s0`，IP `192.168.2.100` |
 | MTU | `9000`（Jumbo Frame，相机大帧必备，`nmcli` 永久生效） |
@@ -36,6 +36,16 @@
 | 2 | 硬触发 | Line0 接收流水线传感器信号 |
 
 启动参数：`CAMERA_WIDTH / CAMERA_HEIGHT / CAMERA_EXPOSURE(7000us) / CAMERA_GAIN(0dB)`。
+
+### 相机温度
+
+- MV-CS060 系列**一般支持温度**，但节点名因型号/固件而异，且常被标成 `visible=false`——MVS 客户端的**普通参数页看不到**，只有**完整节点树**模式（右侧面板顶部"树/列表"图标）才有，所以"MVS 里搜不到"不代表相机没有。
+- `HikvisionCamera::getTemperature()` **自动探测**常见节点名，命中即锁存，之后每次只读那一个：
+  `DeviceTemperature` → `SensorTemperature` → `CameraTemperature` → `DeviceSensorTemperature`。
+  节点是 Float（°C）或 Int（值=0.1°C），均兼容。全失败返回 -1。
+- 读不到温度时界面**只显示 GPU 温度**（不显示"相机 --"）；连续 3 次读失败后放弃重试，不再白读 GigE 寄存器。
+- **性能**：温度是低优先级状态显示，只在主循环【空闲】分支刷新（检测路径零温度 I/O）；读一次缓存 60s。
+- 换不同型号相机：节点名在这四个常见名内即可自动显示，无需改代码；不在的话在 MVS 完整节点树里找真实节点名加进数组即可。
 
 ---
 
