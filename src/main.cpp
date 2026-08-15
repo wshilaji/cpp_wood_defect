@@ -149,7 +149,9 @@ int main(int argc, char** argv) {
     // ---- Qt 界面 ----
     QApplication app(argc, argv);
     MainWindow win;
-    win.show();
+    // 默认全屏 kiosk 模式：无边框 + 置顶 + 全屏，连桌面侧边栏/任务栏一起盖住
+    win.setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    win.showFullScreen();
 
     // ---- 相机（软触发模式） ----
     HikvisionCamera cam;
