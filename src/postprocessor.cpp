@@ -55,8 +55,8 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
     }
 
     std::vector<std::string> reasons;
-    if (jieba_cnt > Config::JIEBA_MAX_COUNT)
-        reasons.push_back("jieba>" + std::to_string(Config::JIEBA_MAX_COUNT));
+    if (jieba_cnt > _jieba_max_count)
+        reasons.push_back("jieba>" + std::to_string(_jieba_max_count));
     if (dongba_cnt > Config::DONGBA_MAX_COUNT)
         reasons.push_back("dongba>" + std::to_string(Config::DONGBA_MAX_COUNT));
     if (dongban_sum / total_area > Config::DONGBAN_AREA_RATIO)

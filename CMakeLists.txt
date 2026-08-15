@@ -3,6 +3,7 @@ project(wood_defect_detector VERSION 2.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
@@ -26,6 +27,10 @@ find_library(TRTYOLO_LIB trtyolo
 # ---- OpenCV ----
 find_package(OpenCV REQUIRED)
 
+# ---- Qt (Widgets, 界面) ----
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+
 # ---- 海康 MVS SDK（本地 third_party）----
 set(MVS_DIR "${CMAKE_SOURCE_DIR}/third_party/mvs"
     CACHE PATH "海康 MVS SDK 路径")
@@ -40,6 +45,7 @@ set(SOURCES
     src/camera.cpp
     src/postprocessor.cpp
     src/plc_link.cpp
+    src/mainwindow.cpp
 )
 
 set(HEADERS
@@ -48,6 +54,7 @@ set(HEADERS
     include/infer.h
     include/postprocessor.h
     include/plc_link.h
+    include/mainwindow.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
@@ -64,6 +71,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${TRTYOLO_LIB}
     ${MVS_LIB}
     ${OpenCV_LIBS}
+    Qt${QT_VERSION_MAJOR}::Widgets
     Threads::Threads
     ${MODBUS_LIBRARIES}
 )

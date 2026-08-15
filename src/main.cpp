@@ -1,7 +1,8 @@
 /**
- * 木板瑕疵检测 v2.0 — TensorRT-YOLO 推理 + 海康相机 + PLC
+ * 木板瑕疵检测 v2.0 — TensorRT-YOLO 推理 + 海康相机 + PLC + Qt 界面
  *
  * 流程: PLC ──TCP──→ Nano ──软触发──→ 相机 ──图像──→ AI检测 ──TCP──→ PLC
+ * 界面: Qt 窗口显示图像 + 统计 + 工人设置(jieba阈值/存图比例) + 相机调参
  */
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -13,9 +14,14 @@
 #include <numeric>
 #include <exception>
 #include <sstream>
+#include <iomanip>
 #include <fstream>
+#include <sys/stat.h>
 #include <poll.h>
 #include <unistd.h>
+
+#include <QApplication>
+#include <QString>
 
 #include "config.h"
 #include "camera.h"
@@ -24,6 +30,7 @@
 #include "plc_link.h"
 #include "measure.h"
 #include "perf.h"
+#include "mainwindow.h"
 
 static std::atomic<bool> running{true};
 
@@ -90,7 +97,6 @@ struct FPS {
 static float getGPUTemp() {
     static float cached = -1;
     static auto last = []() -> std::chrono::steady_clock::time_point {
-        // 首次调用强制读，设置为epoch强制过期
         return std::chrono::steady_clock::time_point{};
     }();
     auto now = std::chrono::steady_clock::now();
@@ -107,23 +113,32 @@ static float getGPUTemp() {
 }
 
 // ============================================================
-// CLAHE 增强（LAB L通道）
+// 保存原始图（按比例采样，比例由界面输入框控制）
+// 必须在任何处理之前调用，因为后续 draw/measure 会原地改图
 // ============================================================
-static cv::Mat enhance(const cv::Mat& f, float clip, int tile) {
-    cv::Mat lab, out;
-    cv::cvtColor(f, lab, cv::COLOR_BGR2Lab);
-    std::vector<cv::Mat> ch(3);
-    cv::split(lab, ch);
-    cv::createCLAHE(clip, cv::Size(tile, tile))->apply(ch[0], ch[0]);
-    cv::merge(ch, lab);
-    cv::cvtColor(lab, out, cv::COLOR_Lab2BGR);
-    return out;
+static void saveOriginalImage(const cv::Mat& frame) {
+    if (!Config::SAVE_IMAGES || frame.empty()) return;
+
+    std::string dir = std::string(Config::OUTPUT_DIR) + "raw/";
+    mkdir(dir.c_str(), 0755);
+
+    // 文件名: RAW_YYYYmmdd_HHMMSS_xxx.jpg
+    auto now = std::chrono::system_clock::now();
+    auto t   = std::chrono::system_clock::to_time_t(now);
+    auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   now.time_since_epoch()) % 1000;
+    std::ostringstream ss;
+    ss << dir << "RAW_" << std::put_time(std::localtime(&t), "%Y%m%d_%H%M%S_")
+       << std::setfill('0') << std::setw(3) << ms.count() << ".jpg";
+
+    cv::imwrite(ss.str(), frame);
+    std::cout << "[Save] 原始图 → " << ss.str() << std::endl;
 }
 
 // ============================================================
 // 主函数
 // ============================================================
-int main() {
+int main(int argc, char** argv) {
     // ---- 注册崩溃清理 ----
     std::set_terminate(on_terminate);
     std::signal(SIGINT,  on_signal);
@@ -131,7 +146,12 @@ int main() {
     std::signal(SIGSEGV, on_signal);
     std::signal(SIGABRT, on_signal);
 
-    // ---- 1. 相机（软触发模式） ----
+    // ---- Qt 界面 ----
+    QApplication app(argc, argv);
+    MainWindow win;
+    win.show();
+
+    // ---- 相机（软触发模式） ----
     HikvisionCamera cam;
     g_cam = &cam;
 
@@ -142,19 +162,21 @@ int main() {
         }
         cam.start(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT,
                   Config::CAMERA_EXPOSURE, Config::CAMERA_GAIN, Config::CAMERA_TRIGGER);
+        win.setCamRunning(true);
 
-        // ---- 2. 推理引擎 ----
+        // ---- 推理引擎 ----
         InferEngine infer;
         if (!infer.load(Config::ENGINE_PATH)) {
             std::cerr << "引擎加载失败" << std::endl;
             cam.stop();
             return -2;
         }
+        win.setEngineReady(true);
 
-        // ---- 3. 后处理 ----
+        // ---- 后处理 ----
         Postprocessor post(Config::CONF_THRESHOLD, Config::CLASSES);
 
-        // ---- 4. PLC TCP Server ----
+        // ---- PLC TCP Server ----
         PlcLink plc(Config::PLC_TCP_PORT);
         g_plc = &plc;
         if (!plc.start()) {
@@ -170,23 +192,35 @@ int main() {
             cam.readNewest(since, 500);   // 等预热帧到并丢弃
         }
 
-        // ---- 5. 主循环（PLC 事件驱动 / 回车后门） ----
+        // ---- 主循环（PLC / 手动拍照 / 回车后门 触发） ----
         FPS fps;
         uint64_t total = 0, ng_total = 0;
         auto t0 = std::chrono::steady_clock::now();
 
-        std::cout << "系统就绪（PLC 触发 / 回车触发，ESC 退出）\n" << std::endl;
+        // 相机调参用: 记录上次已下发值（初始即界面默认值，避免启动重复下发）
+        int last_expo = Config::CAMERA_EXPOSURE;
+        int last_gain = Config::CAMERA_GAIN;
 
-        if (Config::SHOW_DISPLAY) {
-            cv::namedWindow("Wood Defect Detection", cv::WINDOW_NORMAL);
-            cv::resizeWindow("Wood Defect Detection", 1920, 1080);
-        }
+        std::cout << "系统就绪（PLC 触发 / 界面手动拍照 / 回车后门）\n" << std::endl;
 
         while (running) {
-            // 等待触发: PLC 指令 或 终端回车
+            // 保持 UI 响应（事件泵）
+            app.processEvents();
+
+            // ---- 相机调参: 界面值变了就下发（工程师调参用） ----
+            int expo = win.exposureUs(), gain = win.gainDb();
+            if (expo != last_expo) { cam.setExposureTime((float)expo); last_expo = expo; }
+            if (gain != last_gain) { cam.setGain((float)gain);         last_gain = gain; }
+
+            // ---- 触发源: ①界面手动拍照 ②PLC ③回车后门 ----
             bool triggered = false;
 
-            if (plc.waitTrigger(50)) {
+            if (win.takeManualTrigger()) {
+                triggered = true;
+                std::cout << "[UI] 手动拍照" << std::endl;
+            }
+
+            if (!triggered && plc.waitTrigger(50)) {
                 triggered = true;
                 std::cout << "[PLC] 收到触发信号 → 拍照" << std::endl;
             }
@@ -204,13 +238,9 @@ int main() {
             }
 
             if (!triggered) {
-                // if (!plc.isConnected() && total == 0) {
-                //     std::cout << "[PLC] 等待连接中...（按回车直接触发）" << std::endl;
-                // }
-                // 保持窗口响应
-                if (Config::SHOW_DISPLAY) {
-                    if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
-                }
+                // 空闲: 刷新 PLC 状态 / GPU 温度
+                win.setPlcConnected(plc.isConnected());
+                win.setGpuTemp(getGPUTemp());
                 continue;
             }
 
@@ -219,8 +249,7 @@ int main() {
 
             PerfTimer pt;
 
-            // 软触发相机拍照：先记当前帧序号，触发后等本次触发的新帧，
-            // 避免拿到缓冲区里上一拍残留的旧帧（否则会滞后一帧）
+            // 软触发相机拍照：先记当前帧序号，触发后等本次触发的新帧
             uint64_t since = cam.frameCount();
             cam.softwareTrigger();
 
@@ -232,8 +261,15 @@ int main() {
 
             pt.tick("拍照");
 
-            // CLAHE 增强
-            //cv::Mat img = enhance(frame, 2.0f, 8);
+            // 按比例保存原始图（默认 50% = 每 2 张存 1 张，界面可调）
+            {
+                int pct = win.rawSaveRatioPct();
+                static uint64_t shot = 0;
+                if (pct > 0 && (++shot % (100 / pct)) == 0)
+                    saveOriginalImage(frame);
+            }
+
+            // CLAHE 增强（默认关闭，开启时在此对 frame 做增强）
             cv::Mat img = frame;
 
             pt.tick("增强");
@@ -251,10 +287,6 @@ int main() {
             cv::Mat K = makeK(Config::FX, Config::FY, Config::CX, Config::CY);
             auto measure = measureBoard(img, K, Config::DISTANCE_MM);
             if (measure.valid) {
-                // // 画木板轮廓
-                // std::vector<std::vector<cv::Point>> c{measure.contour};
-                // cv::drawContours(img, c, 0, cv::Scalar(0, 255, 0), 3);
-                // 画旋转矩形
                 cv::Point2f rc[4];
                 measure.rrect.points(rc);
                 for (int i = 0; i < 4; ++i)
@@ -263,7 +295,8 @@ int main() {
 
             pt.tick("测量");
 
-            // NG 判定（jieba/dongba 按数量，dongban/quebian 按面积占比）
+            // NG 判定：用界面输入的 jieba 数量阈值
+            post.setJiebaMaxCount(win.jiebaMaxCount());
             std::string ng_reason;
             bool is_ng = post.isNG(defects, sz, ng_reason);
             if (is_ng) ng_total++;
@@ -283,60 +316,27 @@ int main() {
             if (!defects.empty() && Config::SAVE_IMAGES && is_ng)
                 post.save(img, defects, Config::OUTPUT_DIR);
 
-            // 显示
-            if (Config::SHOW_DISPLAY) {
-                cv::putText(img, is_ng ? "NG" : "OK", {10, 60},
-                            cv::FONT_HERSHEY_SIMPLEX, 2,
-                            is_ng ? cv::Scalar(0,0,255) : cv::Scalar(0,255,0), 4);
-                // NG 原因
-                if (is_ng) {
-                    cv::putText(img, ng_reason, {10, 105},
-                                cv::FONT_HERSHEY_SIMPLEX, 1.0,
-                                cv::Scalar(0, 0, 255), 2);
-                }
-                // GPU 温度
-                float temp = getGPUTemp();
-                std::ostringstream tss;
-                tss << "GPU " << std::fixed << std::setprecision(1) << temp << "C";
-                cv::putText(img, tss.str(), {10, 145},
-                            cv::FONT_HERSHEY_SIMPLEX, 1.2,
-                            cv::Scalar(0, 255, 255), 2);
-                // 合格率 OK/总数
-                {
-                    uint64_t ok_cnt = total - ng_total;
-                    double rate = total > 0 ? (100.0 * ok_cnt / total) : 0.0;
-                    std::ostringstream oss;
-                    oss << "Pass rate " << ok_cnt << "/" << total
-                        << " (" << std::fixed << std::setprecision(1) << rate << "%)";
-                    cv::putText(img, oss.str(), {10, 185},
-                                cv::FONT_HERSHEY_SIMPLEX, 1.2,
-                                cv::Scalar(0, 255, 0), 2);
-                }
-                // 木板长宽
-                if (measure.valid) {
-                    std::ostringstream mss;
-                    mss << std::fixed << std::setprecision(1)
-                        << measure.long_mm << " x " << measure.short_mm << " mm";
-                    cv::putText(img, mss.str(), {10, 225},
-                                cv::FONT_HERSHEY_SIMPLEX, 1.2,
-                                cv::Scalar(255, 255, 0), 2);
-                }
-                cv::imshow("Wood Defect Detection", img);
-                if ((cv::waitKey(1) & 0xFF) == 27) { running = false; break; }
-            }
+            // ---- 刷新界面 ----
+            win.setImage(img);
+            win.setResult(is_ng, QString::fromStdString(ng_reason));
+            win.setStats(total, ng_total);
+            win.setGpuTemp(getGPUTemp());
+            if (measure.valid) win.setMeasure(measure.long_mm, measure.short_mm);
+            win.setCycleMs(pt.elapsed());
 
-            // 统计（用 PerfTimer 计算的总耗时）
-            auto t_end = std::chrono::steady_clock::now();
+            // 统计
             fps.add(pt.elapsed());
 
             if (total % 50 == 0)
                 std::cout << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
                           << " | 检测:" << total << " | NG:" << ng_total << std::endl;
+
+            app.processEvents();
+            if (win.exitRequested()) { running = false; break; }
         }
 
         plc.stop();
         cam.stop();
-        cv::destroyAllWindows();
         auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         std::cout << "\n停止 | 运行:" << (int)dt << "s | 检测:" << total
                   << " | NG:" << ng_total << std::endl;

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "trtyolo.hpp"
+#include "config.h"
 
 struct Defect {
     int cls_id;
@@ -25,8 +26,13 @@ public:
     std::string save(const cv::Mat& frame, const std::vector<Defect>& defects,
                      const std::string& dir);
 
+    /** 工人可调：jieba 数量超过此值判 NG（运行时可改，界面输入框控制） */
+    void setJiebaMaxCount(int n) { _jieba_max_count = n; }
+    int  jiebaMaxCount() const   { return _jieba_max_count; }
+
 private:
     float _thresh;
     std::vector<std::string> _classes;
+    int _jieba_max_count = Config::JIEBA_MAX_COUNT;   // 运行时阈值，默认 8
     static std::string _ts();
 };
