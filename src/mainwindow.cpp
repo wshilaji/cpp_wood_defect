@@ -10,6 +10,9 @@
 #include <QImage>
 #include <QMessageBox>
 #include <QProcess>
+#include <QSettings>
+#include <QScrollArea>
+#include <QFrame>
 
 // ============================================================
 // cv::Mat(BGR) → QImage（深拷贝，防止原图被后续处理改动）
@@ -28,13 +31,14 @@ static QImage cvMatToQImage(const cv::Mat& m) {
 // ============================================================
 // 小工具: 状态灯行 / 统计行 / 输入框行
 // ============================================================
-static QLabel* addLedRow(const QString& name, QVBoxLayout* lay) {
+static QLabel* addLedRow(const QString& name, QBoxLayout* lay) {
     auto* row = new QHBoxLayout;
     auto* led = new QLabel(QString::fromUtf8("●"));
     led->setStyleSheet("color:#666; font-size:16px;");
-    led->setFixedWidth(20);
+    led->setFixedWidth(18);
     auto* lbl = new QLabel(name);
     lbl->setStyleSheet("color:#c8c8c8;");
+    lbl->setAlignment(Qt::AlignCenter);
     row->addWidget(led);
     row->addWidget(lbl, 1);
     lay->addLayout(row);
@@ -91,8 +95,13 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _image->setText(QString::fromUtf8("等待图像…"));
     root->addWidget(_image, 3);
 
-    // ---- 右: 操作面板 ----
-    auto* panel = new QWidget(this);
+    // ---- 右: 操作面板（放滚动区，工人设置行多了/屏幕矮时能滚动，不裁掉底部按钮） ----
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFixedWidth(380);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setStyleSheet("QScrollArea{background:transparent;}");
+    auto* panel = new QWidget;
     panel->setFixedWidth(360);
     auto* v = new QVBoxLayout(panel);
     v->setSpacing(8);
@@ -102,9 +111,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     title->setStyleSheet("font-size:22px; font-weight:bold; color:#4da6ff; padding:4px;");
     v->addWidget(title);
 
-    // 系统状态
+    // 系统状态（3 个灯横排，省空间）
     auto* grpSt = new QGroupBox(QString::fromUtf8("系统状态"), panel);
-    auto* lSt   = new QVBoxLayout(grpSt);
+    auto* lSt   = new QHBoxLayout(grpSt);
     _ledPlc    = addLedRow(QString::fromUtf8("PLC 连接"), lSt);
     _ledCam    = addLedRow(QString::fromUtf8("相机"), lSt);
     _ledEngine = addLedRow(QString::fromUtf8("AI 引擎"), lSt);
@@ -116,8 +125,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _resultBlock = new QLabel("--", grpRs);
     _resultBlock->setAlignment(Qt::AlignCenter);
     _resultBlock->setStyleSheet(
-        "font-size:42px; font-weight:bold; color:#808080;"
-        "background:#262a30; border-radius:10px; padding:16px;");
+        "font-size:26px; font-weight:bold; color:#808080;"
+        "background:#262a30; border-radius:8px; padding:6px;");
     _reasonLabel = new QLabel("", grpRs);
     _reasonLabel->setAlignment(Qt::AlignCenter);
     _reasonLabel->setStyleSheet(
@@ -140,8 +149,13 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 工人设置
     auto* grpSet = new QGroupBox(QString::fromUtf8("工人设置"), panel);
     auto* lSet   = new QVBoxLayout(grpSet);
-    _jiebaSpin = addSpinRow(QString::fromUtf8("jieba NG 数量"), 0, 50, 8, lSet);
-    _rawSpin   = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 50, lSet);
+    _jiebaSpin          = addSpinRow(QString::fromUtf8("结疤 NG 数量"), 0, 50, 8, lSet);
+    _dongbaSpin         = addSpinRow(QString::fromUtf8("洞疤 NG 数量"), 0, 50, 8, lSet);
+    _dongbanAreaSpin    = addSpinRow(QString::fromUtf8("洞坑 面积 %"), 0, 100, 1, lSet);
+    _quebianAreaSpin    = addSpinRow(QString::fromUtf8("缺边 面积 %"), 0, 100, 1, lSet);
+    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤 数量"), 0, 100, 12, lSet);
+    _dongbanQuebianSpin = addSpinRow(QString::fromUtf8("洞坑+缺边 面积 %"), 0, 100, 2, lSet);
+    _rawSpin            = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 50, lSet);
     v->addWidget(grpSet);
 
     // 相机调参（工程师）
@@ -150,6 +164,36 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _expoSpin = addSpinRow(QString::fromUtf8("曝光 (us)"), 0, 100000, 7000, lCam);
     _gainSpin = addSpinRow(QString::fromUtf8("增益 (dB)"), 0, 30, 0, lCam);
     v->addWidget(grpCam);
+
+    // ---- 设置持久化: 存到当前目录 config.ini（可见文件，重启后保留） ----
+    QSettings s(QStringLiteral("config.ini"), QSettings::IniFormat);
+    _jiebaSpin->setValue(s.value("jieba_max", 8).toInt());
+    _dongbaSpin->setValue(s.value("dongba_max", 8).toInt());
+    _dongbanAreaSpin->setValue(s.value("dongban_area_pct", 1).toInt());
+    _quebianAreaSpin->setValue(s.value("quebian_area_pct", 1).toInt());
+    _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 12).toInt());
+    _dongbanQuebianSpin->setValue(s.value("dongban_quebian_area_pct", 2).toInt());
+    _rawSpin->setValue(s.value("raw_save_pct", 50).toInt());
+    _expoSpin->setValue(s.value("exposure_us", 7000).toInt());
+    _gainSpin->setValue(s.value("gain_db", 0).toInt());
+    connect(_jiebaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_max", v); });
+    connect(_dongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongba_max", v); });
+    connect(_dongbanAreaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_area_pct", v); });
+    connect(_quebianAreaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("quebian_area_pct", v); });
+    connect(_jiebaDongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_dongba_max", v); });
+    connect(_dongbanQuebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_quebian_area_pct", v); });
+    connect(_rawSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("raw_save_pct", v); });
+    connect(_expoSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("exposure_us", v); });
+    connect(_gainSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("gain_db", v); });
 
     // 操作按钮
     auto* btnRow = new QHBoxLayout;
@@ -173,7 +217,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     v->addWidget(shutdownBtn);
     v->addStretch(1);
 
-    root->addWidget(panel, 0);
+    scroll->setWidget(panel);
+    root->addWidget(scroll, 0);
 
     // 深色工业风主题
     setStyleSheet(QString::fromUtf8(R"(
@@ -220,14 +265,14 @@ void MainWindow::setResult(bool ng, const QString& reason) {
     if (ng) {
         _resultBlock->setText("NG");
         _resultBlock->setStyleSheet(
-            "font-size:42px; font-weight:bold; color:white;"
-            "background:#c0392b; border-radius:10px; padding:16px;");
+            "font-size:26px; font-weight:bold; color:white;"
+            "background:#c0392b; border-radius:8px; padding:6px;");
         _reasonLabel->setText(reason);
     } else {
         _resultBlock->setText("OK");
         _resultBlock->setStyleSheet(
-            "font-size:42px; font-weight:bold; color:white;"
-            "background:#2e8b57; border-radius:10px; padding:16px;");
+            "font-size:26px; font-weight:bold; color:white;"
+            "background:#2e8b57; border-radius:8px; padding:6px;");
         _reasonLabel->setText(QString::fromUtf8("正常"));
     }
 }
@@ -262,10 +307,15 @@ void MainWindow::setEngineReady(bool on)  { setLed(_ledEngine, on); }
 // ============================================================
 // 工人设置读取
 // ============================================================
-int MainWindow::jiebaMaxCount() const  { return _jiebaSpin->value(); }
-int MainWindow::rawSaveRatioPct() const{ return _rawSpin->value(); }
-int MainWindow::exposureUs() const     { return _expoSpin->value(); }
-int MainWindow::gainDb() const         { return _gainSpin->value(); }
+int MainWindow::jiebaMaxCount() const          { return _jiebaSpin->value(); }
+int MainWindow::dongbaMaxCount() const         { return _dongbaSpin->value(); }
+int MainWindow::dongbanAreaPct() const         { return _dongbanAreaSpin->value(); }
+int MainWindow::quebianAreaPct() const         { return _quebianAreaSpin->value(); }
+int MainWindow::jiebaDongbaMaxCount() const    { return _jiebaDongbaSpin->value(); }
+int MainWindow::dongbanQuebianAreaPct() const  { return _dongbanQuebianSpin->value(); }
+int MainWindow::rawSaveRatioPct() const        { return _rawSpin->value(); }
+int MainWindow::exposureUs() const             { return _expoSpin->value(); }
+int MainWindow::gainDb() const                 { return _gainSpin->value(); }
 
 // ============================================================
 // 按钮标志

@@ -207,6 +207,9 @@ int main(int argc, char** argv) {
             // 保持 UI 响应（事件泵）
             app.processEvents();
 
+            // 退出检查放在循环最前面：否则空闲(等 PLC 触发)时会 continue 跳到底部检查之前
+            if (win.exitRequested()) { running = false; break; }
+
             // ---- 相机调参: 界面值变了就下发（工程师调参用） ----
             int expo = win.exposureUs(), gain = win.gainDb();
             if (expo != last_expo) { cam.setExposureTime((float)expo); last_expo = expo; }
@@ -295,8 +298,13 @@ int main(int argc, char** argv) {
 
             pt.tick("测量");
 
-            // NG 判定：用界面输入的 jieba 数量阈值
+            // NG 判定：用界面输入的工人阈值（jieba/dongba 数量、dongban/quebian 面积、组合判定）
             post.setJiebaMaxCount(win.jiebaMaxCount());
+            post.setDongbaMaxCount(win.dongbaMaxCount());
+            post.setDongbanAreaRatio(win.dongbanAreaPct() / 100.0f);
+            post.setQuebianAreaRatio(win.quebianAreaPct() / 100.0f);
+            post.setJiebaDongbaMaxCount(win.jiebaDongbaMaxCount());
+            post.setDongbanQuebianAreaRatio(win.dongbanQuebianAreaPct() / 100.0f);
             std::string ng_reason;
             bool is_ng = post.isNG(defects, sz, ng_reason);
             if (is_ng) ng_total++;
@@ -331,8 +339,6 @@ int main(int argc, char** argv) {
                 std::cout << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
                           << " | 检测:" << total << " | NG:" << ng_total << std::endl;
 
-            app.processEvents();
-            if (win.exitRequested()) { running = false; break; }
         }
 
         plc.stop();

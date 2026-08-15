@@ -56,13 +56,19 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
 
     std::vector<std::string> reasons;
     if (jieba_cnt > _jieba_max_count)
-        reasons.push_back("jieba>" + std::to_string(_jieba_max_count));
-    if (dongba_cnt > Config::DONGBA_MAX_COUNT)
-        reasons.push_back("dongba>" + std::to_string(Config::DONGBA_MAX_COUNT));
-    if (dongban_sum / total_area > Config::DONGBAN_AREA_RATIO)
-        reasons.push_back("dongban>" + std::to_string(std::lround(Config::DONGBAN_AREA_RATIO * 100.0)) + "%");
-    if (quebian_sum / total_area > Config::QUEBIAN_AREA_RATIO)
-        reasons.push_back("quebian>" + std::to_string(std::lround(Config::QUEBIAN_AREA_RATIO * 100.0)) + "%");
+        reasons.push_back("结疤>" + std::to_string(_jieba_max_count));
+    if (dongba_cnt > _dongba_max_count)
+        reasons.push_back("洞疤>" + std::to_string(_dongba_max_count));
+    if (dongban_sum / total_area > _dongban_area_ratio)
+        reasons.push_back("洞坑>" + std::to_string(std::lround(_dongban_area_ratio * 100.0)) + "%");
+    if (quebian_sum / total_area > _quebian_area_ratio)
+        reasons.push_back("缺边>" + std::to_string(std::lround(_quebian_area_ratio * 100.0)) + "%");
+    // 组合判定：jieba+dongba 数量之和、dongban+quebian 面积之和
+    if (jieba_cnt + dongba_cnt > _jieba_dongba_max_count)
+        reasons.push_back("结疤+洞疤>" + std::to_string(_jieba_dongba_max_count));
+    if ((dongban_sum + quebian_sum) / total_area > _dongban_quebian_area_ratio)
+        reasons.push_back("洞坑+缺边>" +
+                          std::to_string(std::lround(_dongban_quebian_area_ratio * 100.0)) + "%");
 
     reason.clear();
     for (size_t i = 0; i < reasons.size(); ++i) {

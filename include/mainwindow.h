@@ -34,6 +34,11 @@ public:
 
     // ---- 工人设置（主循环轮询读取） ----
     int jiebaMaxCount() const;
+    int dongbaMaxCount() const;
+    int dongbanAreaPct() const;
+    int quebianAreaPct() const;
+    int jiebaDongbaMaxCount() const;
+    int dongbanQuebianAreaPct() const;
     int rawSaveRatioPct() const;
     int exposureUs() const;
     int gainDb() const;
@@ -61,10 +66,15 @@ private:
     QLabel*   _statDims      = nullptr;
     QLabel*   _statCycle     = nullptr;
     QLabel*   _statGpu       = nullptr;
-    QSpinBox* _jiebaSpin     = nullptr;
-    QSpinBox* _rawSpin       = nullptr;
-    QSpinBox* _expoSpin      = nullptr;
-    QSpinBox* _gainSpin      = nullptr;
+    QSpinBox* _jiebaSpin        = nullptr;
+    QSpinBox* _dongbaSpin       = nullptr;
+    QSpinBox* _dongbanAreaSpin  = nullptr;
+    QSpinBox* _quebianAreaSpin  = nullptr;
+    QSpinBox* _jiebaDongbaSpin  = nullptr;
+    QSpinBox* _dongbanQuebianSpin = nullptr;
+    QSpinBox* _rawSpin          = nullptr;
+    QSpinBox* _expoSpin         = nullptr;
+    QSpinBox* _gainSpin         = nullptr;
 
     QImage    _lastImage;
     bool      _manual = false;
