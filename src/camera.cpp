@@ -359,13 +359,19 @@ float HikvisionCamera::getGain() {
 
 // ============================================================
 // 获取相机温度（DeviceTemperature 节点，单位 °C）
+// 标准是 Float 节点；部分型号是 Int 节点（值 = 0.1°C），做兼容
 // ============================================================
 float HikvisionCamera::getTemperature() {
     if (!_handle) return -1.0f;
-    MVCC_FLOATVALUE val;
-    if (MV_CC_GetFloatValue(_handle, "DeviceTemperature", &val) == MV_OK) {
-        return val.fCurValue;
-    }
+
+    MVCC_FLOATVALUE fval = {0};
+    if (MV_CC_GetFloatValue(_handle, "DeviceTemperature", &fval) == MV_OK)
+        return fval.fCurValue;
+
+    MVCC_INTVALUE ival = {0};
+    if (MV_CC_GetIntValue(_handle, "DeviceTemperature", &ival) == MV_OK)
+        return (float)ival.nCurValue / 10.0f;
+
     return -1.0f;
 }
 

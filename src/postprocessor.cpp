@@ -5,6 +5,13 @@
 #include <sstream>
 #include <iomanip>
 
+// 百分比显示：支持一位小数（界面 QDoubleSpinBox 可配 0.4%，lround 会吞掉小数）
+static std::string pctStr(float ratio) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(1) << ratio * 100.0f;
+    return ss.str();
+}
+
 std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
                                             cv::Mat& frame, const cv::Size& size) {
     std::vector<Defect> defects;
@@ -58,15 +65,14 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
     if (dongba_cnt > _dongba_max_count)
         reasons.push_back("洞疤>" + std::to_string(_dongba_max_count));
     if (dongban_sum / total_area > _dongban_area_ratio)
-        reasons.push_back("洞坑>" + std::to_string(std::lround(_dongban_area_ratio * 100.0)) + "%");
+        reasons.push_back("洞坑>" + pctStr(_dongban_area_ratio) + "%");
     if (quebian_sum / total_area > _quebian_area_ratio)
-        reasons.push_back("缺边>" + std::to_string(std::lround(_quebian_area_ratio * 100.0)) + "%");
+        reasons.push_back("缺边>" + pctStr(_quebian_area_ratio) + "%");
     // 组合判定：jieba+dongba 数量之和、dongban+quebian 面积之和
     if (jieba_cnt + dongba_cnt > _jieba_dongba_max_count)
         reasons.push_back("结疤+洞疤>" + std::to_string(_jieba_dongba_max_count));
     if ((dongban_sum + quebian_sum) / total_area > _dongban_quebian_area_ratio)
-        reasons.push_back("洞坑+缺边>" +
-                          std::to_string(std::lround(_dongban_quebian_area_ratio * 100.0)) + "%");
+        reasons.push_back("洞坑+缺边>" + pctStr(_dongban_quebian_area_ratio) + "%");
 
     // 木板尺寸判定：测得长/宽低于阈值判 NG（0=没测到，不判尺寸）
     if (len_mm > 0 && len_mm < _min_length_mm)

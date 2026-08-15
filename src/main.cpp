@@ -118,10 +118,17 @@ static float getGPUTemp() {
 static float getCameraTemp(HikvisionCamera& cam) {
     static float cached = -1;
     static auto last = std::chrono::steady_clock::time_point{};
+    static bool warned = false;
     auto now = std::chrono::steady_clock::now();
-    if (cached < 0 || std::chrono::duration<double>(now - last).count() > 60.0) {
+    double dt = std::chrono::duration<double>(now - last).count();
+    // 读成功 → 60s 刷新一次；读失败 → 5s 重试一次（不每次循环都走 GigE 读寄存器）
+    if ((cached >= 0.0f && dt > 60.0) || (cached < 0.0f && dt > 5.0)) {
         cached = cam.getTemperature();
         last = now;
+        if (cached < 0.0f && !warned) {
+            warned = true;
+            std::cerr << "[Camera] 温度读取失败，界面显示 --（相机不支持该节点或节点名不同）" << std::endl;
+        }
     }
     return cached;
 }
