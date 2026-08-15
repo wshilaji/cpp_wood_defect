@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "config.h"
 
 #include <QLabel>
 #include <QVBoxLayout>
@@ -6,6 +7,7 @@
 #include <QGroupBox>
 #include <QSpinBox>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QPixmap>
 #include <QImage>
 #include <QMessageBox>
@@ -13,6 +15,8 @@
 #include <QSettings>
 #include <QScrollArea>
 #include <QFrame>
+#include <QInputDialog>
+#include <QLineEdit>
 
 // ============================================================
 // cv::Mat(BGR) → QImage（深拷贝，防止原图被后续处理改动）
@@ -155,7 +159,12 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _quebianAreaSpin    = addSpinRow(QString::fromUtf8("缺边 面积 %"), 0, 100, 1, lSet);
     _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤 数量"), 0, 100, 12, lSet);
     _dongbanQuebianSpin = addSpinRow(QString::fromUtf8("洞坑+缺边 面积 %"), 0, 100, 2, lSet);
-    _rawSpin            = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 50, lSet);
+    _rawSpin            = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet);
+    // 存图总开关：默认关，开启需密码（防止工人误开把硬盘写满）
+    _saveChk = new QCheckBox(QString::fromUtf8("存图开关（原始+结果图按比例存）"), grpSet);
+    _saveChk->setStyleSheet(
+        QString::fromUtf8("QCheckBox{color:#e0e0e0;} QCheckBox::indicator{width:18px;height:18px;}"));
+    lSet->addWidget(_saveChk);
     v->addWidget(grpSet);
 
     // 相机调参（工程师）
@@ -173,9 +182,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _quebianAreaSpin->setValue(s.value("quebian_area_pct", 1).toInt());
     _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 12).toInt());
     _dongbanQuebianSpin->setValue(s.value("dongban_quebian_area_pct", 2).toInt());
-    _rawSpin->setValue(s.value("raw_save_pct", 50).toInt());
     _expoSpin->setValue(s.value("exposure_us", 7000).toInt());
     _gainSpin->setValue(s.value("gain_db", 0).toInt());
+    _saveChk->setChecked(s.value("save_enabled", false).toBool());
     connect(_jiebaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_max", v); });
     connect(_dongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -188,12 +197,19 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_dongba_max", v); });
     connect(_dongbanQuebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_quebian_area_pct", v); });
-    connect(_rawSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("raw_save_pct", v); });
     connect(_expoSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("exposure_us", v); });
     connect(_gainSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("gain_db", v); });
+    // 存图开关：开启需密码，错则退回关；关闭随时可关
+    connect(_saveChk, &QCheckBox::toggled, this, [this](bool on) {
+        if (on && !verifySavePassword()) {
+            _saveChk->setChecked(false);
+            return;
+        }
+        QSettings(QStringLiteral("config.ini"), QSettings::IniFormat)
+            .setValue("save_enabled", _saveChk->isChecked());
+    });
 
     // 操作按钮
     auto* btnRow = new QHBoxLayout;
@@ -316,6 +332,20 @@ int MainWindow::dongbanQuebianAreaPct() const  { return _dongbanQuebianSpin->val
 int MainWindow::rawSaveRatioPct() const        { return _rawSpin->value(); }
 int MainWindow::exposureUs() const             { return _expoSpin->value(); }
 int MainWindow::gainDb() const                 { return _gainSpin->value(); }
+bool MainWindow::saveEnabled() const           { return _saveChk->isChecked(); }
+
+// ============================================================
+// 存图开关密码校验
+// ============================================================
+bool MainWindow::verifySavePassword() {
+    bool ok = false;
+    QString pwd = QInputDialog::getText(this,
+                    QString::fromUtf8("开启存图"),
+                    QString::fromUtf8("请输入存图密码："),
+                    QLineEdit::Password, QString(), &ok);
+    if (!ok) return false;
+    return pwd == QString::fromUtf8(Config::SAVE_ENABLE_PASSWORD);
+}
 
 // ============================================================
 // 按钮标志

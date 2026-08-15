@@ -266,13 +266,18 @@ int main(int argc, char** argv) {
 
             pt.tick("拍照");
 
-            // 按比例保存原始图（默认 50% = 每 2 张存 1 张，界面可调）
-            {
+            // 存图总开关：界面「存图开关」需密码开启（默认关，防硬盘写满）；
+            // 开启后 原始图/OK/NG 结果图 按同一个比例抽样（默认 50% = 每 2 张存 1 张）
+            bool save_this = false;
+            if (win.saveEnabled()) {
                 int pct = win.rawSaveRatioPct();
                 static uint64_t shot = 0;
                 if (pct > 0 && (++shot % (100 / pct)) == 0)
-                    saveOriginalImage(frame);
+                    save_this = true;
             }
+
+            if (save_this)
+                saveOriginalImage(frame);
 
             // CLAHE 增强（默认关闭，开启时在此对 frame 做增强）
             cv::Mat img = frame;
@@ -323,8 +328,9 @@ int main(int argc, char** argv) {
 
             pt.dump();
 
-            if (!defects.empty() && Config::SAVE_IMAGES && is_ng)
-                post.save(img, defects, Config::OUTPUT_DIR);
+            // 结果图（OK/NG 统一）按同一个比例抽样保存
+            if (save_this && Config::SAVE_IMAGES)
+                post.save(img, is_ng, Config::OUTPUT_DIR);
 
             // ---- 刷新界面 ----
             win.setImage(img);

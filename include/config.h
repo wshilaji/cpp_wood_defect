@@ -56,5 +56,6 @@ const std::vector<double> DIST_COEFFS = {0.0, 0.0, 0.0, 0.0, 0.0};
 constexpr bool  SAVE_IMAGES   = true;
 constexpr bool  SHOW_DISPLAY  = true;
 constexpr const char* OUTPUT_DIR = "./output/";
+constexpr const char* SAVE_ENABLE_PASSWORD = "629785";   // 界面开启「存图开关」所需密码
 
 } // namespace Config

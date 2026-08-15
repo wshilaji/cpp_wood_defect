@@ -111,13 +111,12 @@ void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {
     }
 }
 
-std::string Postprocessor::save(const cv::Mat& frame,
-                                 const std::vector<Defect>& defects,
+std::string Postprocessor::save(const cv::Mat& frame, bool is_ng,
                                  const std::string& dir) {
-    if (defects.empty()) return "";
+    if (frame.empty()) return "";
 
     mkdir(dir.c_str(), 0755);
-    std::string path = dir + "/NG_" + _ts() + ".jpg";
+    std::string path = dir + (is_ng ? "/NG_" : "/OK_") + _ts() + ".jpg";
     cv::imwrite(path, frame);
     return path;
 }

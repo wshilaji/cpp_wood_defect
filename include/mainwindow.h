@@ -7,6 +7,7 @@
 
 class QLabel;
 class QSpinBox;
+class QCheckBox;
 
 /**
  * 木板瑕疵检测 — Qt 操作界面
@@ -43,6 +44,9 @@ public:
     int exposureUs() const;
     int gainDb() const;
 
+    /** 存图总开关：默认关；开一次后按比例存原始+结果图。开启需密码（verifySavePassword） */
+    bool saveEnabled() const;
+
     // ---- 按钮（主循环轮询消费） ----
     bool takeManualTrigger();      // true=工人点了手动拍照（消费一次）
     bool exitRequested() const;
@@ -53,6 +57,7 @@ protected:
 private:
     void updateImageDisplay();
     void doShutdown();   // 一键关机：确认后调用 systemctl poweroff
+    bool verifySavePassword();   // 弹密码框，返回密码是否正确
 
     QLabel*   _image         = nullptr;
     QLabel*   _ledPlc        = nullptr;
@@ -75,6 +80,7 @@ private:
     QSpinBox* _rawSpin          = nullptr;
     QSpinBox* _expoSpin         = nullptr;
     QSpinBox* _gainSpin         = nullptr;
+    QCheckBox* _saveChk         = nullptr;
 
     QImage    _lastImage;
     bool      _manual = false;
