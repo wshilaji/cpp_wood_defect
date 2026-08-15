@@ -191,15 +191,16 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 工人设置
     auto* grpSet = new QGroupBox(QString::fromUtf8("工人设置"), panel);
     auto* lSet   = new QVBoxLayout(grpSet);
-    _jiebaSpin          = addSpinRow(QString::fromUtf8("结疤 NG 数量"), 0, 50, 8, lSet);
-    _dongbaSpin         = addSpinRow(QString::fromUtf8("洞疤 NG 数量"), 0, 50, 8, lSet);
-    _dongbanAreaSpin    = addSpinRow(QString::fromUtf8("洞坑 面积 %"), 0, 100, 1, lSet);
-    _quebianAreaSpin    = addSpinRow(QString::fromUtf8("缺边 面积 %"), 0, 100, 1, lSet);
-    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤 数量"), 0, 100, 12, lSet);
-    _dongbanQuebianSpin = addSpinRow(QString::fromUtf8("洞坑+缺边 面积 %"), 0, 100, 2, lSet);
+    // 结疤/洞疤 NG 数量、洞坑/缺边面积 —— 各横排一行，省面板空间
+    addSpinRowPair(QString::fromUtf8("结疤NG"), 0, 50, 8, "", &_jiebaSpin,
+                   QString::fromUtf8("洞疤NG"), 0, 50, 8, "", &_dongbaSpin, lSet);
+    addSpinRowPair(QString::fromUtf8("洞坑面积"), 0, 100, 1, " %", &_dongbanAreaSpin,
+                   QString::fromUtf8("缺边面积"), 0, 100, 1, " %", &_quebianAreaSpin, lSet);
+    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤数量"), 0, 100, 12, lSet);
+    _dongbanQuebianSpin = addSpinRow(QString::fromUtf8("洞坑+缺边面积 %"), 0, 100, 2, lSet);
     // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG（默认整板一半 600/300）
-    addSpinRowPair(QString::fromUtf8("板长"), 0, 2000, 600, " mm", &_lenSpin,
-                   QString::fromUtf8("板宽"), 0, 2000, 300, " mm", &_widSpin, lSet);
+    addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 600, " mm", &_lenSpin,
+                   QString::fromUtf8("板宽小于"), 0, 2000, 300, " mm", &_widSpin, lSet);
     // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示
     _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
     _resultSpin = addSpinRow(QString::fromUtf8("结果图保存 %"), 0, 100, 0, lSet, &_resultRow);
