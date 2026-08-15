@@ -8,6 +8,8 @@
 #include <QPushButton>
 #include <QPixmap>
 #include <QImage>
+#include <QMessageBox>
+#include <QProcess>
 
 // ============================================================
 // cv::Mat(BGR) → QImage（深拷贝，防止原图被后续处理改动）
@@ -74,7 +76,7 @@ static void setLed(QLabel* led, bool on) {
 // 构造
 // ============================================================
 MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
-    setWindowTitle(QString::fromUtf8("木板瑕疵检测系统 v2.0"));
+    setWindowTitle(QString::fromUtf8("旭森智造"));
     resize(1500, 900);
 
     auto* root = new QHBoxLayout(this);
@@ -95,7 +97,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* v = new QVBoxLayout(panel);
     v->setSpacing(8);
 
-    auto* title = new QLabel(QString::fromUtf8("木板瑕疵检测"));
+    auto* title = new QLabel(QString::fromUtf8("旭森智造"));
     title->setAlignment(Qt::AlignCenter);
     title->setStyleSheet("font-size:22px; font-weight:bold; color:#4da6ff; padding:4px;");
     v->addWidget(title);
@@ -162,6 +164,13 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     btnRow->addWidget(snap);
     btnRow->addWidget(exit);
     v->addLayout(btnRow);
+
+    // 关机按钮（独立一行，防误触）
+    auto* shutdownBtn = new QPushButton(QString::fromUtf8("关机"), panel);
+    shutdownBtn->setStyleSheet(
+        QString::fromUtf8("font-size:16px; font-weight:bold; padding:8px; color:#ffd2d2;"
+                          "background:#7a1f1f; border-radius:6px;"));
+    v->addWidget(shutdownBtn);
     v->addStretch(1);
 
     root->addWidget(panel, 0);
@@ -182,6 +191,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
 
     connect(snap, &QPushButton::clicked, this, [this] { _manual = true; });
     connect(exit, &QPushButton::clicked, this, [this] { _exit = true; });
+    connect(shutdownBtn, &QPushButton::clicked, this, [this] { doShutdown(); });
 }
 
 // ============================================================
@@ -266,3 +276,21 @@ bool MainWindow::takeManualTrigger() {
 }
 
 bool MainWindow::exitRequested() const { return _exit; }
+
+// ============================================================
+// 一键关机：确认后调用 systemctl poweroff
+// systemctl poweroff 走 logind，桌面登录用户即可，无需 sudo
+// ============================================================
+void MainWindow::doShutdown() {
+    QMessageBox box(QMessageBox::Warning,
+                    QString::fromUtf8("确认关机"),
+                    QString::fromUtf8("确定要关闭整个系统吗？\n正在进行的检测将立即中断。"),
+                    QMessageBox::NoButton, this);
+    auto* yes = box.addButton(QString::fromUtf8("关机"), QMessageBox::AcceptRole);
+    box.addButton(QString::fromUtf8("取消"), QMessageBox::RejectRole);
+    box.exec();
+    if (box.clickedButton() != yes) return;
+
+    QProcess::startDetached(QStringLiteral("systemctl"),
+                            {QStringLiteral("poweroff")});
+}

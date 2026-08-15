@@ -47,6 +47,7 @@ protected:
 
 private:
     void updateImageDisplay();
+    void doShutdown();   // 一键关机：确认后调用 systemctl poweroff
 
     QLabel*   _image         = nullptr;
     QLabel*   _ledPlc        = nullptr;
