@@ -64,7 +64,7 @@ inline std::string saveOriginalImage(const cv::Mat& frame) {
     ss << dir << "RAW_" << std::put_time(std::localtime(&t), "%Y%m%d_%H%M%S_")
        << std::setfill('0') << std::setw(3) << ms.count() << ".jpg";
 
-    std::vector<int> jpg{cv::IMWRITE_JPEG_QUALITY, 85};   // 质量85，压一压存图大小
+    std::vector<int> jpg{cv::IMWRITE_JPEG_QUALITY, 80};   // 原始图质量80，留存诊断用
     cv::imwrite(ss.str(), frame, jpg);
     std::cout << "[Save] 原始图 → " << ss.str() << std::endl;
     return ss.str();
