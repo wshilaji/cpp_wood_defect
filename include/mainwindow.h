@@ -33,6 +33,9 @@ public:
     void setCamRunning(bool on);
     void setEngineReady(bool on);
 
+    // ---- 存图保护：累计超 1GB 停存后界面提示 ----
+    void setSaveBlocked(bool blocked);
+
     // ---- 工人设置（主循环轮询读取） ----
     int jiebaMaxCount() const;
     int dongbaMaxCount() const;
@@ -78,9 +81,11 @@ private:
     QSpinBox* _jiebaDongbaSpin  = nullptr;
     QSpinBox* _dongbanQuebianSpin = nullptr;
     QSpinBox* _rawSpin          = nullptr;
+    QWidget*  _rawRow           = nullptr;   // 原始图保存%整行，开发者模式开关开启后才显示
     QSpinBox* _expoSpin         = nullptr;
     QSpinBox* _gainSpin         = nullptr;
     QCheckBox* _saveChk         = nullptr;
+    QLabel*    _saveBlocked     = nullptr;
 
     QImage    _lastImage;
     bool      _manual = false;

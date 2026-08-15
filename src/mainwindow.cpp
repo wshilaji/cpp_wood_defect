@@ -62,8 +62,11 @@ static QLabel* addStatRow(const QString& name, QVBoxLayout* lay) {
     return val;
 }
 
-static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxLayout* lay) {
-    auto* row = new QHBoxLayout;
+static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxLayout* lay,
+                            QWidget** outRow = nullptr) {
+    auto* box = new QWidget;                 // 整行包成 QWidget，方便整行显隐
+    auto* row = new QHBoxLayout(box);
+    row->setContentsMargins(0, 0, 0, 0);
     auto* lbl = new QLabel(name);
     lbl->setStyleSheet("color:#c8c8c8;");
     auto* sp = new QSpinBox;
@@ -71,7 +74,8 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
     sp->setValue(def);
     row->addWidget(lbl, 1);
     row->addWidget(sp);
-    lay->addLayout(row);
+    lay->addWidget(box);
+    if (outRow) *outRow = box;
     return sp;
 }
 
@@ -159,12 +163,19 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _quebianAreaSpin    = addSpinRow(QString::fromUtf8("缺边 面积 %"), 0, 100, 1, lSet);
     _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤 数量"), 0, 100, 12, lSet);
     _dongbanQuebianSpin = addSpinRow(QString::fromUtf8("洞坑+缺边 面积 %"), 0, 100, 2, lSet);
-    _rawSpin            = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet);
+    // 原始图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示
+    _rawSpin = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
+    _rawRow->setVisible(false);
     // 存图总开关：默认关，开启需密码（防止工人误开把硬盘写满）
-    _saveChk = new QCheckBox(QString::fromUtf8("存图开关（原始+结果图按比例存）"), grpSet);
+    _saveChk = new QCheckBox(QString::fromUtf8("开发者模式（存图开关）"), grpSet);
     _saveChk->setStyleSheet(
         QString::fromUtf8("QCheckBox{color:#e0e0e0;} QCheckBox::indicator{width:18px;height:18px;}"));
     lSet->addWidget(_saveChk);
+    // 存图保护提示：累计超 1GB 停存后显示
+    _saveBlocked = new QLabel(QString::fromUtf8("⚠ 存图已停：累计超 1GB"), grpSet);
+    _saveBlocked->setStyleSheet(QString::fromUtf8("color:#ff8080; font-size:14px;"));
+    _saveBlocked->setVisible(false);
+    lSet->addWidget(_saveBlocked);
     v->addWidget(grpSet);
 
     // 相机调参（工程师）
@@ -184,7 +195,6 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _dongbanQuebianSpin->setValue(s.value("dongban_quebian_area_pct", 2).toInt());
     _expoSpin->setValue(s.value("exposure_us", 7000).toInt());
     _gainSpin->setValue(s.value("gain_db", 0).toInt());
-    _saveChk->setChecked(s.value("save_enabled", false).toBool());
     connect(_jiebaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_max", v); });
     connect(_dongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -201,14 +211,13 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("exposure_us", v); });
     connect(_gainSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("gain_db", v); });
-    // 存图开关：开启需密码，错则退回关；关闭随时可关
+    // 存图开关：每次启动强制关（不持久化）；开启需密码，错则退回关；关闭随时可关
     connect(_saveChk, &QCheckBox::toggled, this, [this](bool on) {
         if (on && !verifySavePassword()) {
             _saveChk->setChecked(false);
             return;
         }
-        QSettings(QStringLiteral("config.ini"), QSettings::IniFormat)
-            .setValue("save_enabled", _saveChk->isChecked());
+        _rawRow->setVisible(_saveChk->isChecked());   // 密码对才显示比例行
     });
 
     // 操作按钮
@@ -319,6 +328,9 @@ void MainWindow::setCycleMs(double ms) {
 void MainWindow::setPlcConnected(bool on) { setLed(_ledPlc, on); }
 void MainWindow::setCamRunning(bool on)   { setLed(_ledCam, on); }
 void MainWindow::setEngineReady(bool on)  { setLed(_ledEngine, on); }
+void MainWindow::setSaveBlocked(bool blocked) {
+    if (_saveBlocked) _saveBlocked->setVisible(blocked);
+}
 
 // ============================================================
 // 工人设置读取

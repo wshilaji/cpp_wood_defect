@@ -13,10 +13,8 @@
 #include <deque>
 #include <numeric>
 #include <exception>
-#include <sstream>
 #include <iomanip>
 #include <fstream>
-#include <sys/stat.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -30,6 +28,7 @@
 #include "plc_link.h"
 #include "measure.h"
 #include "perf.h"
+#include "util.h"
 #include "mainwindow.h"
 
 static std::atomic<bool> running{true};
@@ -110,29 +109,6 @@ static float getGPUTemp() {
         last = now;
     }
     return cached;
-}
-
-// ============================================================
-// 保存原始图（按比例采样，比例由界面输入框控制）
-// 必须在任何处理之前调用，因为后续 draw/measure 会原地改图
-// ============================================================
-static void saveOriginalImage(const cv::Mat& frame) {
-    if (!Config::SAVE_IMAGES || frame.empty()) return;
-
-    std::string dir = std::string(Config::OUTPUT_DIR) + "raw/";
-    mkdir(dir.c_str(), 0755);
-
-    // 文件名: RAW_YYYYmmdd_HHMMSS_xxx.jpg
-    auto now = std::chrono::system_clock::now();
-    auto t   = std::chrono::system_clock::to_time_t(now);
-    auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   now.time_since_epoch()) % 1000;
-    std::ostringstream ss;
-    ss << dir << "RAW_" << std::put_time(std::localtime(&t), "%Y%m%d_%H%M%S_")
-       << std::setfill('0') << std::setw(3) << ms.count() << ".jpg";
-
-    cv::imwrite(ss.str(), frame);
-    std::cout << "[Save] 原始图 → " << ss.str() << std::endl;
 }
 
 // ============================================================
@@ -276,8 +252,9 @@ int main(int argc, char** argv) {
                     save_this = true;
             }
 
-            if (save_this)
-                saveOriginalImage(frame);
+            if (save_this && saveAllowed()) {
+                g_savedBytes += fileSizeBytes(saveOriginalImage(frame));
+            }
 
             // CLAHE 增强（默认关闭，开启时在此对 frame 做增强）
             cv::Mat img = frame;
@@ -328,9 +305,11 @@ int main(int argc, char** argv) {
 
             pt.dump();
 
-            // 结果图（OK/NG 统一）按同一个比例抽样保存
-            if (save_this && Config::SAVE_IMAGES)
-                post.save(img, is_ng, Config::OUTPUT_DIR);
+            // 结果图（OK/NG 统一）按同一个比例抽样保存（超 1GB 保护闸）
+            if (save_this && Config::SAVE_IMAGES && saveAllowed()) {
+                g_savedBytes += fileSizeBytes(post.save(img, is_ng, Config::OUTPUT_DIR));
+            }
+            win.setSaveBlocked(g_saveBlocked);   // 超限时界面提示「存图已停」
 
             // ---- 刷新界面 ----
             win.setImage(img);
