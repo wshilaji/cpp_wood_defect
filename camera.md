@@ -37,15 +37,12 @@
 
 启动参数：`CAMERA_WIDTH / CAMERA_HEIGHT / CAMERA_EXPOSURE(7000us) / CAMERA_GAIN(0dB)`。
 
-### 相机温度
+### 相机温度（已废弃）
 
-- MV-CS060 系列**一般支持温度**，但节点名因型号/固件而异，且常被标成 `visible=false`——MVS 客户端的**普通参数页看不到**，只有**完整节点树**模式（右侧面板顶部"树/列表"图标）才有，所以"MVS 里搜不到"不代表相机没有。
-- `HikvisionCamera::getTemperature()` **自动探测**常见节点名，命中即锁存，之后每次只读那一个：
-  `DeviceTemperature` → `SensorTemperature` → `CameraTemperature` → `DeviceSensorTemperature`。
-  节点是 Float（°C）或 Int（值=0.1°C），均兼容。全失败返回 -1。
-- 读不到温度时界面**只显示 GPU 温度**（不显示"相机 --"）；连续 3 次读失败后放弃重试，不再白读 GigE 寄存器。
-- **性能**：温度是低优先级状态显示，只在主循环【空闲】分支刷新（检测路径零温度 I/O）；读一次缓存 60s。
-- 换不同型号相机：节点名在这四个常见名内即可自动显示，无需改代码；不在的话在 MVS 完整节点树里找真实节点名加进数组即可。
+- MV-CS060-10GC 在 MVS 客户端搜不到温度节点，SDK 常见节点名（DeviceTemperature / SensorTemperature /
+  CameraTemperature / DeviceSensorTemperature）也全都读不到 → 判定该相机不向 SDK 暴露温度。
+- **功能已移除**：界面温度栏只显示"英伟达GPU"，不再读相机温度（`getTemperature()` 已删）。
+- 若以后换带温度节点的相机，再按需加回（参考 git 历史里有过的自动探测实现）。
 
 ---
 

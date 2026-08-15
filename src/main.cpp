@@ -92,13 +92,11 @@ struct FPS {
 };
 
 // ============================================================
-// 温度（低优先级：只喂状态栏显示，不参与检测）
-// 只在主循环【空闲】分支刷新（refreshGpuTemp/refreshCamTemp 仅在空闲处调用），
-// 触发拍照的检测路径绝不做任何温度 I/O —— 一次读缓存 60s；相机读失败 5s 重试、
-// 连续 3 次失败后放弃（MV-CS060 无温度节点时不再白读 GigE 寄存器）。
+// GPU 温度（低优先级：只喂状态栏显示，不参与检测）
+// 只在主循环【空闲】分支刷新（refreshGpuTemp 仅在空闲处调用），
+// 触发拍照的检测路径零温度 I/O；一次读缓存 60s。
 // ============================================================
 static float g_gpuTemp = -1;
-static float g_camTemp = -1;
 
 static void refreshGpuTemp() {
     static auto last = std::chrono::steady_clock::time_point{};
@@ -111,23 +109,6 @@ static void refreshGpuTemp() {
             g_gpuTemp = raw / 1000.0f;
         }
         last = now;
-    }
-}
-
-static void refreshCamTemp(HikvisionCamera& cam) {
-    static auto last = std::chrono::steady_clock::time_point{};
-    static bool dead = false;   // 相机无温度节点时放弃重试，避免一直白读 GigE 寄存器
-    if (dead) return;
-    auto now = std::chrono::steady_clock::now();
-    double dt = std::chrono::duration<double>(now - last).count();
-    // 读成功 → 60s 刷新一次；读失败 → 5s 重试一次
-    if ((g_camTemp >= 0.0f && dt > 60.0) || (g_camTemp < 0.0f && dt > 5.0)) {
-        g_camTemp = cam.getTemperature();
-        last = now;
-        if (g_camTemp < 0.0f) {
-            static int fails = 0;
-            if (++fails >= 3) dead = true;
-        }
     }
 }
 
@@ -271,11 +252,10 @@ int main(int argc, char** argv) {
             }
 
             if (!triggered) {
-                // 空闲: 刷新 PLC 状态 / GPU+相机温度（温度只在空闲读，不占检测路径）
+                // 空闲: 刷新 PLC 状态 / GPU 温度（温度只在空闲读，不占检测路径）
                 win.setPlcConnected(plc.isConnected());
                 refreshGpuTemp();
-                refreshCamTemp(cam);
-                win.setTemps(g_gpuTemp, g_camTemp);
+                win.setGpuTemp(g_gpuTemp);
                 continue;
             }
 
@@ -376,7 +356,7 @@ int main(int argc, char** argv) {
             win.setImage(img);
             win.setResult(is_ng, QString::fromStdString(ng_reason));
             win.setStats(total, ng_total);
-            win.setTemps(g_gpuTemp, g_camTemp);   // 只显示空闲时刷新的缓存值，检测路径零温度 I/O
+            win.setGpuTemp(g_gpuTemp);   // 只显示空闲时刷新的缓存值，检测路径零温度 I/O
             if (measure.valid) win.setMeasure(measure.long_mm, measure.short_mm);
             win.setCycleMs(pt.elapsed());
 

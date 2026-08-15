@@ -13,7 +13,7 @@ class QCheckBox;
 /**
  * 木板瑕疵检测 — Qt 操作界面
  *
- * 由检测主循环驱动刷新：setImage/setResult/setStats/setTemps/setMeasure/setCycleMs。
+ * 由检测主循环驱动刷新：setImage/setResult/setStats/setGpuTemp/setMeasure/setCycleMs。
  * 工人设置（jieba 数量 / 存图比例 / 曝光 / 增益）用 QSpinBox，主循环轮询读取后下发。
  * 手动拍照 / 退出 通过按钮置位标志，主循环轮询消费（takeManualTrigger/exitRequested）。
  */
@@ -25,7 +25,7 @@ public:
     void setImage(const cv::Mat& bgr);
     void setResult(bool ng, const QString& reason);
     void setStats(quint64 total, quint64 ng);
-    void setTemps(double gpu_c, double cam_c);   // GPU 温度；相机温度 >=0 才拼接显示（MV-CS060 无温度节点只显示 GPU）
+    void setGpuTemp(double gpu_c);   // GPU 温度（英伟达），负值显示 --
     void setMeasure(double long_mm, double short_mm);
     void setCycleMs(double ms);
 

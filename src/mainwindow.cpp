@@ -415,14 +415,10 @@ void MainWindow::setStats(quint64 total, quint64 ng) {
     _statRate->setText(QString::number(rate, 'f', 1) + "%");
 }
 
-void MainWindow::setTemps(double gpu_c, double cam_c) {
-    // 相机无温度节点（MV-CS060 不支持）时只显示 GPU；有温度（cam_c >= 0）才拼接显示
+void MainWindow::setGpuTemp(double gpu_c) {
     QString gpu = gpu_c < 0 ? QString::fromUtf8("--")
                             : QString::number(gpu_c, 'f', 1) + QString::fromUtf8("°C");
-    QString text = QString::fromUtf8("英伟达GPU %1").arg(gpu);
-    if (cam_c >= 0.0)
-        text += QString("  相机 %1°C").arg(QString::number(cam_c, 'f', 1));
-    _statTemp->setText(text);
+    _statTemp->setText(QString::fromUtf8("英伟达GPU %1").arg(gpu));
 }
 
 void MainWindow::setMeasure(double long_mm, double short_mm) {

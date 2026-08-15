@@ -93,9 +93,6 @@ public:
     float getExposureTime();
     float getGain();
 
-    /** 获取相机温度（SDK DeviceTemperature 节点，单位 °C；读取失败返回 -1） */
-    float getTemperature();
-
 private:
     // ---- 内部辅助 ----
     /** 枚举所有在线设备 */
