@@ -117,7 +117,8 @@ std::string Postprocessor::save(const cv::Mat& frame, bool is_ng,
 
     mkdir(dir.c_str(), 0755);
     std::string path = dir + (is_ng ? "/NG_" : "/OK_") + _ts() + ".jpg";
-    cv::imwrite(path, frame);
+    std::vector<int> jpg{cv::IMWRITE_JPEG_QUALITY, 85};   // 质量85，压一压存图大小
+    cv::imwrite(path, frame, jpg);
     return path;
 }
 
