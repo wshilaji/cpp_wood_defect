@@ -242,17 +242,20 @@ int main(int argc, char** argv) {
 
             pt.tick("拍照");
 
-            // 存图总开关：界面「存图开关」需密码开启（默认关，防硬盘写满）；
-            // 开启后 原始图/OK/NG 结果图 按同一个比例抽样（默认 50% = 每 2 张存 1 张）
-            bool save_this = false;
+            // 存图总开关：界面「开发者模式」需密码开启（默认关，防硬盘写满）；
+            // 开启后 原始图 / 结果图 各按自己的比例独立抽样（每 100/pct 张存 1 张）
+            bool save_raw = false, save_res = false;
             if (win.saveEnabled()) {
-                int pct = win.rawSaveRatioPct();
-                static uint64_t shot = 0;
-                if (pct > 0 && (++shot % (100 / pct)) == 0)
-                    save_this = true;
+                int rpct = win.rawSaveRatioPct();
+                static uint64_t raw_shot = 0;
+                if (rpct > 0 && (++raw_shot % (100 / rpct)) == 0) save_raw = true;
+
+                int spct = win.resultSaveRatioPct();
+                static uint64_t res_shot = 0;
+                if (spct > 0 && (++res_shot % (100 / spct)) == 0) save_res = true;
             }
 
-            if (save_this && saveAllowed()) {
+            if (save_raw && saveAllowed()) {
                 g_savedBytes += fileSizeBytes(saveOriginalImage(frame));
             }
 
@@ -305,8 +308,8 @@ int main(int argc, char** argv) {
 
             pt.dump();
 
-            // 结果图（OK/NG 统一）按同一个比例抽样保存（超 1GB 保护闸）
-            if (save_this && Config::SAVE_IMAGES && saveAllowed()) {
+            // 结果图（OK/NG 统一）按结果图比例抽样保存（超 1GB 保护闸）
+            if (save_res && Config::SAVE_IMAGES && saveAllowed()) {
                 g_savedBytes += fileSizeBytes(post.save(img, is_ng, Config::OUTPUT_DIR));
             }
             win.setSaveBlocked(g_saveBlocked);   // 超限时界面提示「存图已停」

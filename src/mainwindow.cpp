@@ -163,9 +163,11 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _quebianAreaSpin    = addSpinRow(QString::fromUtf8("缺边 面积 %"), 0, 100, 1, lSet);
     _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤 数量"), 0, 100, 12, lSet);
     _dongbanQuebianSpin = addSpinRow(QString::fromUtf8("洞坑+缺边 面积 %"), 0, 100, 2, lSet);
-    // 原始图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示
-    _rawSpin = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
+    // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示
+    _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
+    _resultSpin = addSpinRow(QString::fromUtf8("结果图保存 %"), 0, 100, 0, lSet, &_resultRow);
     _rawRow->setVisible(false);
+    _resultRow->setVisible(false);
     // 存图总开关：默认关，开启需密码（防止工人误开把硬盘写满）
     _saveChk = new QCheckBox(QString::fromUtf8("开发者模式（存图开关）"), grpSet);
     _saveChk->setStyleSheet(
@@ -217,7 +219,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             _saveChk->setChecked(false);
             return;
         }
-        _rawRow->setVisible(_saveChk->isChecked());   // 密码对才显示比例行
+        _rawRow->setVisible(_saveChk->isChecked());      // 密码对才显示两行比例
+        _resultRow->setVisible(_saveChk->isChecked());
     });
 
     // 操作按钮
@@ -342,6 +345,7 @@ int MainWindow::quebianAreaPct() const         { return _quebianAreaSpin->value(
 int MainWindow::jiebaDongbaMaxCount() const    { return _jiebaDongbaSpin->value(); }
 int MainWindow::dongbanQuebianAreaPct() const  { return _dongbanQuebianSpin->value(); }
 int MainWindow::rawSaveRatioPct() const        { return _rawSpin->value(); }
+int MainWindow::resultSaveRatioPct() const     { return _resultSpin->value(); }
 int MainWindow::exposureUs() const             { return _expoSpin->value(); }
 int MainWindow::gainDb() const                 { return _gainSpin->value(); }
 bool MainWindow::saveEnabled() const           { return _saveChk->isChecked(); }
