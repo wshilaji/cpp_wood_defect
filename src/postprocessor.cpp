@@ -1,12 +1,9 @@
 #include "postprocessor.h"
 #include "config.h"
-#include <iostream>
 #include <algorithm>
 #include <cmath>
-#include <chrono>
 #include <sstream>
 #include <iomanip>
-#include <sys/stat.h>
 
 std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
                                             cv::Mat& frame, const cv::Size& size) {
@@ -109,26 +106,4 @@ void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {
             cv::Point(d.box.x + 2, d.box.y - 4),
             cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
     }
-}
-
-std::string Postprocessor::save(const cv::Mat& frame, bool is_ng,
-                                 const std::string& dir) {
-    if (frame.empty()) return "";
-
-    mkdir(dir.c_str(), 0755);
-    std::string path = dir + (is_ng ? "/NG_" : "/OK_") + _ts() + ".jpg";
-    std::vector<int> jpg{cv::IMWRITE_JPEG_QUALITY, 70};   // 结果图质量70（有画框标注，够用）
-    cv::imwrite(path, frame, jpg);
-    return path;
-}
-
-std::string Postprocessor::_ts() {
-    auto now = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
-    std::ostringstream ss;
-    ss << std::put_time(std::localtime(&t), "%Y%m%d_%H%M%S_")
-       << std::setfill('0') << std::setw(3) << ms.count();
-    return ss.str();
 }

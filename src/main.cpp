@@ -28,7 +28,7 @@
 #include "plc_link.h"
 #include "measure.h"
 #include "perf.h"
-#include "util.h"
+#include "saveworker.h"
 #include "mainwindow.h"
 
 static std::atomic<bool> running{true};
@@ -163,6 +163,9 @@ int main(int argc, char** argv) {
             return -3;
         }
 
+        // ---- 异步存图线程（编码+写盘在后台，主循环零阻塞） ----
+        SaveWorker saver;
+
         // ---- 预热: 触发一次填满相机管线，避免首次拍照丢帧 ----
         {
             uint64_t since = cam.frameCount();
@@ -255,9 +258,8 @@ int main(int argc, char** argv) {
                 if (spct > 0 && (++res_shot % (100 / spct)) == 0) save_res = true;
             }
 
-            if (save_raw && saveAllowed()) {
-                g_savedBytes += fileSizeBytes(saveOriginalImage(frame));
-            }
+            // 原始图丢给后台线程存（深拷贝；队列满/已停存则自动丢弃）
+            if (save_raw && Config::SAVE_IMAGES) saver.push(frame, false, true);
 
             // CLAHE 增强（默认关闭，开启时在此对 frame 做增强）
             cv::Mat img = frame;
@@ -308,11 +310,9 @@ int main(int argc, char** argv) {
 
             pt.dump();
 
-            // 结果图（OK/NG 统一）按结果图比例抽样保存（超 1GB 保护闸）
-            if (save_res && Config::SAVE_IMAGES && saveAllowed()) {
-                g_savedBytes += fileSizeBytes(post.save(img, is_ng, Config::OUTPUT_DIR));
-            }
-            win.setSaveBlocked(g_saveBlocked);   // 超限时界面提示「存图已停」
+            // 结果图（OK/NG 统一）丢给后台线程存（超 1GB 保护闸在 worker 内）
+            if (save_res && Config::SAVE_IMAGES) saver.push(img, is_ng, false);
+            win.setSaveBlocked(saver.blocked());   // 超限时界面提示「存图已停」
 
             // ---- 刷新界面 ----
             win.setImage(img);
@@ -333,6 +333,7 @@ int main(int argc, char** argv) {
 
         plc.stop();
         cam.stop();
+        saver.stop();   // 等后台把排队中的存图写完再退出
         auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         std::cout << "\n停止 | 运行:" << (int)dt << "s | 检测:" << total
                   << " | NG:" << ng_total << std::endl;

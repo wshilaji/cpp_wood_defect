@@ -23,9 +23,6 @@ public:
     /** 整体 NG 判定：jieba/dongba 按数量，dongban/quebian 按面积占比(占整图)，其它默认 OK；reason 输出 NG 原因 */
     bool isNG(const std::vector<Defect>& defects, const cv::Size& size, std::string& reason) const;
     void draw(cv::Mat& frame, const std::vector<Defect>& defects);
-    /** 保存结果图，按 OK/NG 分别命名为 OK_/NG_ 前缀（是否存由调用方按比例判断） */
-    std::string save(const cv::Mat& frame, bool is_ng,
-                     const std::string& dir);
 
     /** 工人可调：jieba 数量超过此值判 NG（运行时可改，界面输入框控制） */
     void setJiebaMaxCount(int n) { _jieba_max_count = n; }
@@ -60,5 +57,4 @@ private:
     float _quebian_area_ratio         = Config::QUEBIAN_AREA_RATIO;         // 默认 1%
     int   _jieba_dongba_max_count     = Config::JIEBA_DONGBA_MAX_COUNT;     // 默认 12
     float _dongban_quebian_area_ratio = Config::DONGBAN_QUEBIAN_AREA_RATIO; // 默认 1.5%
-    static std::string _ts();
 };
