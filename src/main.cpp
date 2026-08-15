@@ -29,6 +29,7 @@
 #include "measure.h"
 #include "perf.h"
 #include "saveworker.h"
+#include "cameraguard.h"
 #include "mainwindow.h"
 
 static std::atomic<bool> running{true};
@@ -112,6 +113,20 @@ static float getGPUTemp() {
 }
 
 // ============================================================
+// 相机温度读取（SDK DeviceTemperature 节点，1分钟缓存，减少 GigE 读寄存器流量）
+// ============================================================
+static float getCameraTemp(HikvisionCamera& cam) {
+    static float cached = -1;
+    static auto last = std::chrono::steady_clock::time_point{};
+    auto now = std::chrono::steady_clock::now();
+    if (cached < 0 || std::chrono::duration<double>(now - last).count() > 60.0) {
+        cached = cam.getTemperature();
+        last = now;
+    }
+    return cached;
+}
+
+// ============================================================
 // 主函数
 // ============================================================
 int main(int argc, char** argv) {
@@ -133,14 +148,30 @@ int main(int argc, char** argv) {
     HikvisionCamera cam;
     g_cam = &cam;
 
-    try {
+    // 相机连接函数（启动 + 掉线重连共用）：失败不退出，由 CameraGuard 后台限频重连。
+    // systemd 自动重启场景下启动即 return 会无限循环重启，所以这里只标记、不退出。
+    auto connectCamera = [&]() -> bool {
+        cam.stop();   // 清残留状态保证重连干净（首次调用无操作）
         if (!cam.connectByIP(Config::CAMERA_IP)) {
-            std::cerr << "相机连接失败" << std::endl;
-            return -1;
+            std::cerr << "[Camera] 连接失败" << std::endl;
+            return false;
         }
-        cam.start(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT,
-                  Config::CAMERA_EXPOSURE, Config::CAMERA_GAIN, Config::CAMERA_TRIGGER);
-        win.setCamRunning(true);
+        // 用界面当前曝光/增益启动（工人调过的参数掉线重连后不丢）
+        if (!cam.start(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT,
+                       (float)win.exposureUs(), (float)win.gainDb(),
+                       Config::CAMERA_TRIGGER)) {
+            std::cerr << "[Camera] 取流启动失败" << std::endl;
+            cam.stop();
+            return false;
+        }
+        return true;
+    };
+
+    try {
+        if (!connectCamera()) {
+            std::cerr << "[Camera] 启动连接失败，进入后台重连模式（主循环持续重试）" << std::endl;
+        }
+        win.setCamRunning(cam.isRunning());
 
         // ---- 推理引擎 ----
         InferEngine infer;
@@ -162,12 +193,22 @@ int main(int argc, char** argv) {
             cam.stop();
             return -3;
         }
+        if (!cam.isRunning()) plc.sendReady(false);   // 相机未就绪 → HR2=0，PLC 知道机器故障
+
+        // ---- 相机守护：掉线自动重连 + 连续空帧判故障通知 PLC ----
+        CameraGuard camGuard(connectCamera, [&](bool ready) {
+            plc.sendReady(ready);          // 就绪 → HR2=1；故障 → HR2=0
+            win.setCamFault(!ready);       // 故障 → 红灯；恢复 → 清红灯
+            win.setCamRunning(ready);      // 就绪 → 绿
+            if (ready) std::cout << "[Camera] 重连成功" << std::endl;
+            else       std::cerr << "[Camera] 连续空帧判定故障 → 通知 PLC（HR2=0）" << std::endl;
+        }, cam.isRunning());
 
         // ---- 异步存图线程（编码+写盘在后台，主循环零阻塞） ----
         SaveWorker saver;
 
-        // ---- 预热: 触发一次填满相机管线，避免首次拍照丢帧 ----
-        {
+        // ---- 预热: 触发一次填满相机管线，避免首次拍照丢帧（相机未就绪则跳过） ----
+        if (cam.isRunning()) {
             uint64_t since = cam.frameCount();
             cam.softwareTrigger();
             cam.readNewest(since, 500);   // 等预热帧到并丢弃
@@ -190,6 +231,10 @@ int main(int argc, char** argv) {
 
             // 退出检查放在循环最前面：否则空闲(等 PLC 触发)时会 continue 跳到底部检查之前
             if (win.exitRequested()) { running = false; break; }
+
+            // 相机健康管理：未连接则限频(1s)后台重连；UI 相机灯实时同步
+            camGuard.poll();
+            win.setCamRunning(cam.isRunning());
 
             // ---- 相机调参: 界面值变了就下发（工程师调参用） ----
             int expo = win.exposureUs(), gain = win.gainDb();
@@ -222,9 +267,14 @@ int main(int argc, char** argv) {
             }
 
             if (!triggered) {
-                // 空闲: 刷新 PLC 状态 / GPU 温度
+                // 空闲: 刷新 PLC 状态 / GPU+相机温度
                 win.setPlcConnected(plc.isConnected());
-                win.setGpuTemp(getGPUTemp());
+                win.setTemps(getGPUTemp(), getCameraTemp(cam));
+                continue;
+            }
+
+            // 相机未就绪：本次触发不拍照（触发已消费），PLC 那边看 HR2=0 知道机器故障
+            if (!camGuard.running()) {
                 continue;
             }
 
@@ -240,8 +290,10 @@ int main(int argc, char** argv) {
             cv::Mat frame = cam.readNewest(since, 500);
             if (frame.empty()) {
                 std::cerr << "[Camera] 触发后未获取到图像" << std::endl;
+                if (camGuard.onMiss()) cam.stop();   // 连续 3 次空帧判故障：停相机，下轮 poll 自动重连
                 continue;
             }
+            camGuard.onFrame();   // 拿到帧，健康
 
             pt.tick("拍照");
 
@@ -323,7 +375,7 @@ int main(int argc, char** argv) {
             win.setImage(img);
             win.setResult(is_ng, QString::fromStdString(ng_reason));
             win.setStats(total, ng_total);
-            win.setGpuTemp(getGPUTemp());
+            win.setTemps(getGPUTemp(), getCameraTemp(cam));
             if (measure.valid) win.setMeasure(measure.long_mm, measure.short_mm);
             win.setCycleMs(pt.elapsed());
 

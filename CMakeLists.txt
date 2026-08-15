@@ -51,9 +51,11 @@ set(SOURCES
 set(HEADERS
     include/config.h
     include/camera.h
+    include/cameraguard.h
     include/infer.h
     include/postprocessor.h
     include/plc_link.h
+    include/saveworker.h
     include/mainwindow.h
 )
 

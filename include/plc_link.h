@@ -14,7 +14,7 @@
  * Holding Register 映射:
  *   HR0 — TRIGGER : PLC 写 1 触发拍照，Nano 检测完后清 0
  *   HR1 — RESULT   : 0=空闲, 1=OK, 2=NG
- *   HR2 — STATUS   : 0=未就绪, 1=就绪
+ *   HR2 — STATUS   : 0=未就绪/故障, 1=就绪（相机掉线/连续空帧时 Nano 置 0，PLC 据此报警停机）
  *
  * PLC 侧只需配 Modbus TCP 主站，读写对应寄存器即可，无需写 Socket 自由口程序。
  */
@@ -45,6 +45,9 @@ public:
 
     /** 清空检测结果（HR1 ← 0，空闲），新一板开始时调用，避免 PLC 读到上一板残留结果 */
     bool resetResult();
+
+    /** 写状态到 HR2（1=就绪, 0=未就绪/故障），相机掉线时置 0，PLC 据此报警停机 */
+    bool sendReady(bool ready);
 
 private:
     void serverLoop();

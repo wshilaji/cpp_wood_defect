@@ -238,3 +238,13 @@ bool PlcLink::resetResult() {
     _mb_mapping->tab_registers[1] = 0;    // 0 = 空闲
     return true;
 }
+
+// ============================================================
+// 写状态到 HR2（1=就绪, 0=未就绪/故障）
+// ============================================================
+bool PlcLink::sendReady(bool ready) {
+    std::lock_guard<std::mutex> lock(_mapping_mutex);
+    if (!_mb_mapping) return false;
+    _mb_mapping->tab_registers[2] = ready ? 1 : 0;
+    return true;
+}

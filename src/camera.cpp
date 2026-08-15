@@ -358,6 +358,18 @@ float HikvisionCamera::getGain() {
 }
 
 // ============================================================
+// 获取相机温度（DeviceTemperature 节点，单位 °C）
+// ============================================================
+float HikvisionCamera::getTemperature() {
+    if (!_handle) return -1.0f;
+    MVCC_FLOATVALUE val;
+    if (MV_CC_GetFloatValue(_handle, "DeviceTemperature", &val) == MV_OK) {
+        return val.fCurValue;
+    }
+    return -1.0f;
+}
+
+// ============================================================
 // 软触发：发送一次拍照指令
 // ============================================================
 bool HikvisionCamera::softwareTrigger() {
