@@ -43,6 +43,8 @@ public:
     int quebianAreaPct() const;
     int jiebaDongbaMaxCount() const;
     int dongbanQuebianAreaPct() const;
+    int minLengthMm() const;
+    int minWidthMm() const;
     int rawSaveRatioPct() const;
     int resultSaveRatioPct() const;
     int exposureUs() const;
@@ -81,6 +83,8 @@ private:
     QSpinBox* _quebianAreaSpin  = nullptr;
     QSpinBox* _jiebaDongbaSpin  = nullptr;
     QSpinBox* _dongbanQuebianSpin = nullptr;
+    QSpinBox* _lenSpin          = nullptr;
+    QSpinBox* _widSpin          = nullptr;
     QSpinBox* _rawSpin          = nullptr;
     QWidget*  _rawRow           = nullptr;   // 原始图保存%整行，开发者模式开关开启后才显示
     QSpinBox* _resultSpin       = nullptr;

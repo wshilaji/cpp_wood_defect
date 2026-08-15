@@ -30,7 +30,8 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
     return defects;
 }
 
-bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& size, std::string& reason) const {
+bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& size,
+                         float len_mm, float wid_mm, std::string& reason) const {
     int   jieba_cnt   = 0;
     int   dongba_cnt  = 0;
     float dongban_sum = 0.0f;
@@ -66,6 +67,12 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
     if ((dongban_sum + quebian_sum) / total_area > _dongban_quebian_area_ratio)
         reasons.push_back("洞坑+缺边>" +
                           std::to_string(std::lround(_dongban_quebian_area_ratio * 100.0)) + "%");
+
+    // 木板尺寸判定：测得长/宽低于阈值判 NG（0=没测到，不判尺寸）
+    if (len_mm > 0 && len_mm < _min_length_mm)
+        reasons.push_back("板长<" + std::to_string(_min_length_mm) + "mm");
+    if (wid_mm > 0 && wid_mm < _min_width_mm)
+        reasons.push_back("板宽<" + std::to_string(_min_width_mm) + "mm");
 
     reason.clear();
     for (size_t i = 0; i < reasons.size(); ++i) {

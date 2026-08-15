@@ -42,6 +42,10 @@ constexpr float QUEBIAN_AREA_RATIO = 0.01f;  // quebian 缺边:面积和占整�
 constexpr int   JIEBA_DONGBA_MAX_COUNT = 12;      // jieba+dongba 数量之和 > 此值判 NG
 constexpr float DONGBAN_QUEBIAN_AREA_RATIO = 0.015f; // dongban+quebian 面积之和占比 > 1.5% 判 NG
 
+// ---- 木板尺寸判定（测量长/宽低于阈值判 NG，默认整板长 1200 / 宽 600 的一半） ----
+constexpr int   MIN_LENGTH_MM = 600;   // 板长 < 此值判 NG
+constexpr int   MIN_WIDTH_MM  = 300;   // 板宽 < 此值判 NG
+
 // ---- 相机标定（木板长宽测量） ----
 // MV-CS050-60GC 像元尺寸 3.45μm (正方形)
 // fx = fy = 8mm / 3.45μm ≈ 2319

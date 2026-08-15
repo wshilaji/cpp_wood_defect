@@ -20,8 +20,11 @@ public:
     std::vector<Defect> process(const trtyolo::DetectRes& res,
                                 cv::Mat& frame, const cv::Size& size);
 
-    /** 整体 NG 判定：jieba/dongba 按数量，dongban/quebian 按面积占比(占整图)，其它默认 OK；reason 输出 NG 原因 */
-    bool isNG(const std::vector<Defect>& defects, const cv::Size& size, std::string& reason) const;
+    /** 整体 NG 判定：jieba/dongba 按数量，dongban/quebian 按面积占比(占整图)，
+     *  板长/板宽按测得尺寸；其它默认 OK；reason 输出 NG 原因
+     *  @param len_mm / wid_mm  测量出的板长/板宽（0=未测到，不判尺寸 NG） */
+    bool isNG(const std::vector<Defect>& defects, const cv::Size& size,
+              float len_mm, float wid_mm, std::string& reason) const;
     void draw(cv::Mat& frame, const std::vector<Defect>& defects);
 
     /** 工人可调：jieba 数量超过此值判 NG（运行时可改，界面输入框控制） */
@@ -48,6 +51,14 @@ public:
     void  setDongbanQuebianAreaRatio(float r) { _dongban_quebian_area_ratio = r; }
     float dongbanQuebianAreaRatio() const     { return _dongban_quebian_area_ratio; }
 
+    /** 工人可调：测得板长小于此值(mm)判 NG */
+    void setMinLengthMm(int n) { _min_length_mm = n; }
+    int  minLengthMm() const   { return _min_length_mm; }
+
+    /** 工人可调：测得板宽小于此值(mm)判 NG */
+    void setMinWidthMm(int n) { _min_width_mm = n; }
+    int  minWidthMm() const   { return _min_width_mm; }
+
 private:
     float _thresh;
     std::vector<std::string> _classes;
@@ -57,4 +68,6 @@ private:
     float _quebian_area_ratio         = Config::QUEBIAN_AREA_RATIO;         // 默认 1%
     int   _jieba_dongba_max_count     = Config::JIEBA_DONGBA_MAX_COUNT;     // 默认 12
     float _dongban_quebian_area_ratio = Config::DONGBAN_QUEBIAN_AREA_RATIO; // 默认 1.5%
+    int   _min_length_mm              = Config::MIN_LENGTH_MM;              // 默认 600
+    int   _min_width_mm               = Config::MIN_WIDTH_MM;               // 默认 300
 };

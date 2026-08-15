@@ -294,8 +294,13 @@ int main(int argc, char** argv) {
             post.setQuebianAreaRatio(win.quebianAreaPct() / 100.0f);
             post.setJiebaDongbaMaxCount(win.jiebaDongbaMaxCount());
             post.setDongbanQuebianAreaRatio(win.dongbanQuebianAreaPct() / 100.0f);
+            post.setMinLengthMm(win.minLengthMm());
+            post.setMinWidthMm(win.minWidthMm());
             std::string ng_reason;
-            bool is_ng = post.isNG(defects, sz, ng_reason);
+            // 尺寸判定用测量出的长/宽（未测到传 0，不判尺寸 NG）
+            float len_mm = measure.valid ? measure.long_mm : 0.0f;
+            float wid_mm = measure.valid ? measure.short_mm : 0.0f;
+            bool is_ng = post.isNG(defects, sz, len_mm, wid_mm, ng_reason);
             if (is_ng) ng_total++;
             total++;
 

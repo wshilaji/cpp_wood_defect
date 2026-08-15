@@ -79,6 +79,40 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
     return sp;
 }
 
+// 一行横排两个输入框（省纵向空间），单位用 spinbox 后缀显示
+static void addSpinRowPair(const QString& name1, int lo1, int hi1, int def1,
+                           const QString& unit1, QSpinBox** out1,
+                           const QString& name2, int lo2, int hi2, int def2,
+                           const QString& unit2, QSpinBox** out2,
+                           QVBoxLayout* lay) {
+    auto* box = new QWidget;
+    auto* row = new QHBoxLayout(box);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+
+    auto* lbl1 = new QLabel(name1);
+    lbl1->setStyleSheet("color:#c8c8c8;");
+    auto* sp1  = new QSpinBox;
+    sp1->setRange(lo1, hi1);
+    sp1->setValue(def1);
+    if (!unit1.isEmpty()) sp1->setSuffix(unit1);
+    row->addWidget(lbl1, 1);
+    row->addWidget(sp1);
+
+    auto* lbl2 = new QLabel(name2);
+    lbl2->setStyleSheet("color:#c8c8c8;");
+    auto* sp2  = new QSpinBox;
+    sp2->setRange(lo2, hi2);
+    sp2->setValue(def2);
+    if (!unit2.isEmpty()) sp2->setSuffix(unit2);
+    row->addWidget(lbl2, 1);
+    row->addWidget(sp2);
+
+    lay->addWidget(box);
+    if (out1) *out1 = sp1;
+    if (out2) *out2 = sp2;
+}
+
 static void setLed(QLabel* led, bool on) {
     led->setStyleSheet(QString("color:%1; font-size:16px;")
                        .arg(on ? "#2ecc71" : "#666"));
@@ -150,7 +184,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _statNg    = addStatRow(QString::fromUtf8("NG 数"), lStt);
     _statRate  = addStatRow(QString::fromUtf8("合格率"), lStt);
     _statDims  = addStatRow(QString::fromUtf8("木板尺寸"), lStt);
-    _statCycle = addStatRow(QString::fromUtf8("节拍"), lStt);
+    _statCycle = addStatRow(QString::fromUtf8("耗时"), lStt);
     _statGpu   = addStatRow(QString::fromUtf8("GPU 温度"), lStt);
     v->addWidget(grpStt);
 
@@ -163,6 +197,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _quebianAreaSpin    = addSpinRow(QString::fromUtf8("缺边 面积 %"), 0, 100, 1, lSet);
     _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤 数量"), 0, 100, 12, lSet);
     _dongbanQuebianSpin = addSpinRow(QString::fromUtf8("洞坑+缺边 面积 %"), 0, 100, 2, lSet);
+    // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG（默认整板一半 600/300）
+    addSpinRowPair(QString::fromUtf8("板长"), 0, 2000, 600, " mm", &_lenSpin,
+                   QString::fromUtf8("板宽"), 0, 2000, 300, " mm", &_widSpin, lSet);
     // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示
     _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
     _resultSpin = addSpinRow(QString::fromUtf8("结果图保存 %"), 0, 100, 0, lSet, &_resultRow);
@@ -195,6 +232,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _quebianAreaSpin->setValue(s.value("quebian_area_pct", 1).toInt());
     _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 12).toInt());
     _dongbanQuebianSpin->setValue(s.value("dongban_quebian_area_pct", 2).toInt());
+    _lenSpin->setValue(s.value("min_len_mm", 600).toInt());
+    _widSpin->setValue(s.value("min_wid_mm", 300).toInt());
     _expoSpin->setValue(s.value("exposure_us", 7000).toInt());
     _gainSpin->setValue(s.value("gain_db", 0).toInt());
     connect(_jiebaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -209,6 +248,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_dongba_max", v); });
     connect(_dongbanQuebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_quebian_area_pct", v); });
+    connect(_lenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("min_len_mm", v); });
+    connect(_widSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("min_wid_mm", v); });
     connect(_expoSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("exposure_us", v); });
     connect(_gainSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -344,6 +387,8 @@ int MainWindow::dongbanAreaPct() const         { return _dongbanAreaSpin->value(
 int MainWindow::quebianAreaPct() const         { return _quebianAreaSpin->value(); }
 int MainWindow::jiebaDongbaMaxCount() const    { return _jiebaDongbaSpin->value(); }
 int MainWindow::dongbanQuebianAreaPct() const  { return _dongbanQuebianSpin->value(); }
+int MainWindow::minLengthMm() const            { return _lenSpin->value(); }
+int MainWindow::minWidthMm() const             { return _widSpin->value(); }
 int MainWindow::rawSaveRatioPct() const        { return _rawSpin->value(); }
 int MainWindow::resultSaveRatioPct() const     { return _resultSpin->value(); }
 int MainWindow::exposureUs() const             { return _expoSpin->value(); }
