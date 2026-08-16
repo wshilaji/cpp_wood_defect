@@ -330,11 +330,11 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* btnRow = new QHBoxLayout;
     auto* snap = new QPushButton(QString::fromUtf8("手动拍照"), panel);
     snap->setStyleSheet(
-        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; color:white;"
+        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:white;"
                           "background:#2e8b57; border-radius:6px;"));
     auto* exit = new QPushButton(QString::fromUtf8("退出"), panel);
     exit->setStyleSheet(
-        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; color:white;"
+        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:white;"
                           "background:#c0392b; border-radius:6px;"));
     btnRow->addWidget(snap);
     btnRow->addWidget(exit);
@@ -344,11 +344,11 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* powerRow = new QHBoxLayout;
     auto* shutdownBtn = new QPushButton(QString::fromUtf8("关机"), panel);
     shutdownBtn->setStyleSheet(
-        QString::fromUtf8("font-size:16px; font-weight:bold; padding:8px; color:#ffd2d2;"
+        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:#ffd2d2;"
                           "background:#7a1f1f; border-radius:6px;"));
     auto* rebootBtn = new QPushButton(QString::fromUtf8("重启电脑"), panel);
     rebootBtn->setStyleSheet(
-        QString::fromUtf8("font-size:16px; font-weight:bold; padding:8px; color:#ffd2d2;"
+        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:#ffd2d2;"
                           "background:#6b4a1f; border-radius:6px;"));
     powerRow->addWidget(shutdownBtn);
     powerRow->addWidget(rebootBtn);
