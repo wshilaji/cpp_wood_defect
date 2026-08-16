@@ -162,6 +162,11 @@ void PlcLink::serverLoop() {
                     if (_prev_hr4 == 0 && ack == 1) {
                         if (_mb_mapping->tab_registers[3] == 1) {
                             _mb_mapping->tab_registers[3] = 0;   // 清完成标志 → 解锁下一触发
+                            // TODO(TEMP): 采样日志, 观察握手是否工作, 确认后注释掉
+                            static unsigned ack_cnt = 0;
+                            if (++ack_cnt % 2 == 0)
+                                LOGI << "[PLC] 应答采样: 第 " << ack_cnt
+                                     << " 次应答, HR3 已清除";
                         }
                         _mb_mapping->tab_registers[4] = 0;       // 复位应答，等下个 0→1
                         _prev_hr4 = 0;
