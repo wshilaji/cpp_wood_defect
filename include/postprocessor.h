@@ -27,6 +27,9 @@ public:
               float len_mm, float wid_mm, std::string& reason) const;
     void draw(cv::Mat& frame, const std::vector<Defect>& defects);
 
+    /** 画左上角统计面板：类别数 + 各类框数 + dongban/quebian 面积和 */
+    void drawSummary(cv::Mat& frame, const std::vector<Defect>& defects);
+
     /** 工人可调：jieba 数量超过此值判 NG（运行时可改，界面输入框控制） */
     void setJiebaMaxCount(int n) { _jieba_max_count = n; }
     int  jiebaMaxCount() const   { return _jieba_max_count; }

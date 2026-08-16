@@ -12,6 +12,25 @@ static std::string pctStr(float ratio) {
     return ss.str();
 }
 
+// 每个类的框颜色 (BGR)。draw() 画框 和 drawSummary() 面板文字 共用，保持颜色一致
+static cv::Scalar classColor(const std::string& name) {
+    if (name == "dongba")       return cv::Scalar(0, 120, 255);   // 深橙
+    if (name == "dongban")      return cv::Scalar(160, 90, 0);    // 深青
+    if (name == "jieba")        return cv::Scalar(255, 255, 0);   // 青
+    if (name == "shupi")        return cv::Scalar(128, 128, 128); // 灰
+    if (name == "shuwen")       return cv::Scalar(0, 165, 255);   // 橙
+    if (name == "heiba")        return cv::Scalar(0, 0, 255);     // 红
+    if (name == "piwenba")      return cv::Scalar(255, 0, 255);   // 品红
+    if (name == "quebian")      return cv::Scalar(0, 0, 128);     // 深红
+    if (name == "baowen")       return cv::Scalar(255, 165, 0);   // 蓝? 实际是BGR
+    if (name == "liefeng")      return cv::Scalar(0, 0, 200);     // 深红
+    if (name == "suibian")      return cv::Scalar(0, 128, 128);   // 深黄
+    if (name == "heiban")       return cv::Scalar(255, 0, 0);     // 蓝
+    if (name == "banwen")       return cv::Scalar(255, 0, 128);   // 紫
+    if (name == "banwenba")     return cv::Scalar(200, 0, 200);   // 浅紫
+    return cv::Scalar(0, 255, 0);                                 // 默认绿
+}
+
 std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
                                             cv::Mat& frame, const cv::Size& size) {
     std::vector<Defect> defects;
@@ -34,6 +53,7 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
     }
 
     draw(frame, defects);
+    drawSummary(frame, defects);   // 左上角统计面板
     return defects;
 }
 
@@ -90,21 +110,7 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
 
 void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {
     for (const auto& d : defects) {
-        cv::Scalar c(0, 255, 0);  // 默认绿色
-        if (d.name == "dongba")          c = cv::Scalar(0, 120, 255);   // 深橙
-        else if (d.name == "dongban")    c = cv::Scalar(160, 90, 0);    // 深青
-        else if (d.name == "jieba")      c = cv::Scalar(255, 255, 0);   // 青
-        else if (d.name == "shupi")      c = cv::Scalar(128, 128, 128); // 灰
-        else if (d.name == "shuwen")     c = cv::Scalar(0, 165, 255);   // 橙
-        else if (d.name == "heiba")      c = cv::Scalar(0, 0, 255);     // 红
-        else if (d.name == "piwenba")    c = cv::Scalar(255, 0, 255);   // 品红
-        else if (d.name == "quebian")    c = cv::Scalar(0, 0, 128);     // 深红
-        else if (d.name == "baowen")     c = cv::Scalar(255, 165, 0);   // 蓝? 实际是BGR
-        else if (d.name == "liefeng")    c = cv::Scalar(0, 0, 200);     // 深红
-        else if (d.name == "suibian")    c = cv::Scalar(0, 128, 128);   // 深黄
-        else if (d.name == "heiban")     c = cv::Scalar(255, 0, 0);     // 蓝
-        else if (d.name == "banwen")     c = cv::Scalar(255, 0, 128);   // 紫
-        else if (d.name == "banwenba")   c = cv::Scalar(200, 0, 200);   // 浅紫
+        cv::Scalar c = classColor(d.name);
 
         cv::rectangle(frame, d.box.tl(), d.box.br(), c, 2);
 
@@ -118,5 +124,77 @@ void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {
         cv::putText(frame, ss.str(),
             cv::Point(d.box.x + 2, d.box.y - 4),
             cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
+    }
+}
+
+// 左上角统计面板：类别数 + 各类框数 + dongban/quebian 面积和(px + 占图比例)
+void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defects) {
+    if (frame.empty()) return;
+
+    // 按类别统计：框数 + 面积和
+    std::vector<int>  cnt (_classes.size(), 0);
+    std::vector<long> area(_classes.size(), 0);
+    for (const auto& d : defects) {
+        if (d.cls_id < 0 || d.cls_id >= (int)_classes.size()) continue;
+        cnt[d.cls_id]++;
+        area[d.cls_id] += (long)d.box.width * d.box.height;
+    }
+
+    // 面板行 + 每行文字颜色(跟随对应类别框的颜色)。
+    // 注意: cv::putText 只支持 ASCII, 不能写中文(显示乱码), 全用英文
+    std::vector<std::string> lines;
+    std::vector<cv::Scalar>  colors;
+    int present = 0;
+    for (int c : cnt) if (c > 0) present++;
+    lines.push_back("Defects | " + std::to_string(present) + " classes");
+    colors.push_back(cv::Scalar(0, 255, 255));                       // 标题黄色
+    for (size_t i = 0; i < _classes.size(); ++i) {
+        if (cnt[i] == 0) continue;
+        lines.push_back("  " + _classes[i] + " x" + std::to_string(cnt[i]));
+        colors.push_back(classColor(_classes[i]));                   // 同框色
+    }
+    float total = (float)(frame.cols * frame.rows);
+    for (size_t i = 0; i < _classes.size(); ++i) {
+        if (_classes[i] == "dongban" || _classes[i] == "quebian") {
+            std::ostringstream ss;
+            ss << _classes[i] << " area sum " << area[i] << "px ("
+               << pctStr((float)area[i] / total) << "%)";
+            lines.push_back(ss.str());
+            colors.push_back(classColor(_classes[i]));               // 同框色
+        }
+    }
+
+    // 面板尺寸：字号保持能看清，不挡板子靠背景透明(alpha 调浅)而非把字弄小
+    const double fs = 0.5;
+    const int    thickness = 1;
+    int base = 0;
+    int maxw = 0, line_h = 0;
+    std::vector<cv::Size> sizes(lines.size());
+    for (size_t i = 0; i < lines.size(); ++i) {
+        sizes[i] = cv::getTextSize(lines[i], cv::FONT_HERSHEY_SIMPLEX, fs, thickness, &base);
+        maxw   = std::max(maxw, sizes[i].width);
+        line_h = std::max(line_h, sizes[i].height);
+    }
+    const int pad = 6, gap = 4;
+    int panel_w = maxw + pad * 2;
+    int panel_h = (int)lines.size() * (line_h + gap) + pad * 2 - gap;
+
+    // 左上角，超界自动缩回图内
+    int px = 6, py = 6;
+    if (px + panel_w > frame.cols) px = std::max(0, frame.cols - panel_w - 6);
+    if (py + panel_h > frame.rows) py = std::max(0, frame.rows - panel_h - 6);
+
+    // 半透明黑底(轻压暗, 板子能透出来)
+    cv::Mat overlay;
+    frame.copyTo(overlay);
+    cv::rectangle(overlay, cv::Rect(px, py, panel_w, panel_h), cv::Scalar(0, 0, 0), cv::FILLED);
+    cv::addWeighted(overlay, 0.40, frame, 0.60, 0, frame);
+
+    // 文字：每行颜色跟随类别框颜色
+    int ty = py + pad + line_h;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        cv::putText(frame, lines[i], cv::Point(px + pad, ty),
+                    cv::FONT_HERSHEY_SIMPLEX, fs, colors[i], thickness);
+        ty += line_h + gap;
     }
 }
