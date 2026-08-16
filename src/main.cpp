@@ -227,35 +227,26 @@ int main(int argc, char** argv) {
             if (gain != last_gain) { cam.setGain((float)gain);         last_gain = gain; }
 
             // ---- 触发源: ①界面手动拍照 ②PLC ----
-            bool triggered = false;
-            bool from_plc = false;
+            // 板来源(PLC/手动)收进 PlcLink: PLC 板才写结果+握手, 手动板纯 debug 不碰 PLC。
+            // 主循环无需关心 from_plc, 只管「开板 → 拍照推理 → reportResult」
+            auto src = plc.beginBoard(win.takeManualTrigger(), 50);
 
-            if (win.takeManualTrigger()) {
-                triggered = true;
-                LOGI << "[UI] 手动拍照";
-            }
-
-            if (!triggered && plc.waitTrigger(50)) {
-                triggered = true;
-                from_plc = true;   // 只有 PLC 触发才走握手(HR3), 手动拍照不置 HR3
-            }
-
-            if (!triggered) {
+            if (src == BoardSource::None) {
                 // 空闲: 刷新 PLC 状态 / GPU 温度（温度只在空闲读，不占检测路径）
                 win.setPlcConnected(plc.isConnected());
                 refreshGpuTemp();
                 win.setGpuTemp(g_gpuTemp);
                 continue;
             }
+            if (src == BoardSource::Manual)
+                LOGI << "[UI] 手动拍照";
 
             // 相机未就绪：本次触发不拍照（触发已消费），PLC 那边看 HR2=0 知道机器故障
             if (!camGuard.running()) {
                 continue;
             }
 
-            // 新一板开始：先清空上一板结果（HR1←0），避免 PLC 在本周期读到旧状态
-            plc.resetResult();
-
+            // 板开始清 HR1 残留已由 beginBoard 在 PLC 板内部处理，主循环不管
             PerfTimer pt;
 
             // 软触发相机拍照：先记当前帧序号，触发后等本次触发的新帧
@@ -331,12 +322,8 @@ int main(int argc, char** argv) {
             if (is_ng) ng_total++;
             total++;
 
-            // 发送结果给 PLC（每帧零日志，结果只走 Modbus 不发控制台）
-            if (is_ng) plc.sendNG();
-            else       plc.sendOK();
-            // 握手: 只有 PLC 触发的板才置 HR3=1 等 PLC 应答(写 HR4)。手动拍照不置,
-            // 否则 HR3 钉死没人应答, 会把后续 PLC 触发全卡住。
-            if (from_plc) plc.setDone();
+            // 报本板结果: PLC 板写 HR1+HR3(握手), 手动 debug 板自动忽略, PLC 状态保持干净
+            plc.reportResult(!is_ng);
 
             pt.dump();
 

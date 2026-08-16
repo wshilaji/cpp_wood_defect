@@ -30,6 +30,10 @@
  * PLC 侧只需配 Modbus TCP 主站，读写对应寄存器即可，无需写 Socket 自由口程序。
  * 触发条件建议加"HR3=0"门禁（上一板结果取走后才允许新触发）。
  */
+
+/** 本板来源：PLC 触发 或 界面手动 debug。决定 reportResult 是否写 PLC 寄存器 */
+enum class BoardSource { None, Plc, Manual };
+
 class PlcLink {
 public:
     explicit PlcLink(int port = 502);
@@ -45,21 +49,21 @@ public:
     bool isConnected() const;
 
     /**
-     * 等待 PLC 写 HR0=1（条件变量通知，零延迟）
-     * @param timeout_ms 超时毫秒，-1 表示永久等待
-     * @return true=收到触发，false=超时或停止
+     * 开启一板并等触发（界面手动按钮 或 PLC 写 HR0=1，手动优先）。
+     * 板来源收在模块内部：PLC 板 reportResult 才写 HR1/HR3；手动板纯 debug 自动忽略。
+     * @param manual    界面手动按钮是否按下（win.takeManualTrigger() 返回值）
+     * @param timeout_ms PLC 触发等待超时（手动触发时立即返回，忽略此值）
+     * @return None=超时无触发；Manual=手动 debug 板；Plc=PLC 触发的板
      */
-    bool waitTrigger(int timeout_ms = -1);
+    BoardSource beginBoard(bool manual, int timeout_ms = -1);
 
-    /** 写检测结果到 HR1 */
-    bool sendOK();    // HR1 ← 1
-    bool sendNG();    // HR1 ← 2
-
-    /** 清空检测结果（HR1 ← 0，空闲），新一板开始时调用，避免 PLC 读到上一板残留结果 */
-    bool resetResult();
-
-    /** 置完成标志 HR3 ← 1：结果已写好，PLC 读 HR1 后写 HR4=1 应答。检测完成、sendOK/NG 之后调用 */
-    bool setDone();
+    /**
+     * 报告本板检测结果。
+     * - PLC 板：HR1←(ok?1:2) + HR3←1（完成标志，等 PLC 写 HR4=1 应答）
+     * - 手动 debug 板：自动忽略，不碰 HR1/HR3/HR4，PLC 状态保持干净
+     * @param ok true=OK，false=NG
+     */
+    bool reportResult(bool ok);
 
     /** PLC 是否已应答（HR3 == 0）。为 false 表示上一板结果 PLC 还没取走，不应接收新触发 */
     bool isDoneAcked() const;
@@ -69,6 +73,9 @@ public:
 
 private:
     void serverLoop();
+
+    /** 等 PLC 写 HR0=1（条件变量通知，零延迟）。仅 beginBoard 的 PLC 分支调用 */
+    bool waitTrigger(int timeout_ms = -1);
 
     modbus_t*              _ctx          = nullptr;
     modbus_mapping_t*      _mb_mapping   = nullptr;
@@ -86,4 +93,5 @@ private:
     std::atomic<bool>      _waiting{false};
     uint16_t               _prev_hr0 = 0;   // HR0 边缘检测：只有 0→1 才触发
     uint16_t               _prev_hr4 = 0;   // HR4 边缘检测：PLC 应答 0→1 边沿
+    bool                   _board_from_plc = false;   // 本板是否 PLC 触发（主线程读写，无锁）
 };

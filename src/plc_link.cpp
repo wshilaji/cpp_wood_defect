@@ -250,36 +250,32 @@ bool PlcLink::waitTrigger(int timeout_ms) {
 }
 
 // ============================================================
-// 写检测结果到 HR1
+// 板生命周期：beginBoard(开板) → 拍照推理 → reportResult(报结果)
+// 板来源(PLC/手动)收在模块内部，主循环无需关心 from_plc
 // ============================================================
-bool PlcLink::sendOK() {
-    std::lock_guard<std::mutex> lock(_mapping_mutex);
-    if (!_mb_mapping) return false;
-    _mb_mapping->tab_registers[1] = 1;    // 1 = OK
-    return true;
+BoardSource PlcLink::beginBoard(bool manual, int timeout_ms) {
+    if (manual) {
+        // 手动 debug 板：纯存图/看结果，不碰任何 PLC 寄存器
+        _board_from_plc = false;   // 主线程，无锁
+        return BoardSource::Manual;
+    }
+    if (waitTrigger(timeout_ms)) {
+        // PLC 板：板开始先清 HR1 上一板残留，避免 PLC 在本周期读到旧结果
+        std::lock_guard<std::mutex> lock(_mapping_mutex);
+        if (_mb_mapping) _mb_mapping->tab_registers[1] = 0;   // 0 = 空闲
+        _board_from_plc = true;    // 主线程，无锁
+        return BoardSource::Plc;
+    }
+    return BoardSource::None;
 }
 
-bool PlcLink::sendNG() {
+bool PlcLink::reportResult(bool ok) {
+    bool plc_board = _board_from_plc;   // 主线程读，无锁
     std::lock_guard<std::mutex> lock(_mapping_mutex);
     if (!_mb_mapping) return false;
-    _mb_mapping->tab_registers[1] = 2;    // 2 = NG
-    return true;
-}
-
-bool PlcLink::resetResult() {
-    std::lock_guard<std::mutex> lock(_mapping_mutex);
-    if (!_mb_mapping) return false;
-    _mb_mapping->tab_registers[1] = 0;    // 0 = 空闲
-    return true;
-}
-
-// ============================================================
-// 完成标志 HR3（握手核心）
-// ============================================================
-bool PlcLink::setDone() {
-    std::lock_guard<std::mutex> lock(_mapping_mutex);
-    if (!_mb_mapping) return false;
-    _mb_mapping->tab_registers[3] = 1;    // 1 = 结果已写好，PLC 可读 HR1；读后写 0 应答
+    if (!plc_board) return true;   // 手动 debug 板：不写 HR1/HR3，PLC 状态保持干净
+    _mb_mapping->tab_registers[1] = ok ? 1 : 2;   // 1 = OK, 2 = NG
+    _mb_mapping->tab_registers[3] = 1;            // 完成标志：结果已写好，等 PLC 写 HR4=1 应答
     return true;
 }
 
