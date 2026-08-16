@@ -130,8 +130,10 @@ chmod +x "$DIST/check_deps.sh"
 say "生成 install-systemd.sh"
 cat > "$DIST/install-systemd.sh" <<'EOF'
 #!/bin/bash
-# 安装为 systemd 自启动服务 (工厂开机自动运行)
+# 安装为 systemd 自启动服务（工厂开机自动运行）
 # 用法: sudo ./install-systemd.sh
+# 要点: 以桌面用户身份 + DISPLAY/XAUTHORITY 跑 Qt GUI(否则连不上显示器);
+#       用 setcap 解决 502 端口权限(非 root 也能绑 <1024 端口)
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 APP="wood_defect_detector"
@@ -140,29 +142,51 @@ UNIT="/etc/systemd/system/${SVC}.service"
 
 [ "$(id -u)" = 0 ] || { echo "请用 sudo 运行: sudo ./install-systemd.sh"; exit 1; }
 
+# ---- 确定桌面用户(sudo 执行者, 或 seat0 会话用户) ----
+RUNAS="${SUDO_USER:-}"
+[ -z "$RUNAS" ] && RUNAS="$(loginctl list-sessions --no-legend 2>/dev/null | awk '$5=="seat0"{print $3; exit}')"
+[ -n "$RUNAS" ] || { echo "无法确定桌面用户, 请先登录桌面再运行"; exit 1; }
+U_UID="$(id -u "$RUNAS")"
+U_HOME="$(getent passwd "$RUNAS" | cut -d: -f6)"
+
+# ---- 探测桌面用户的 XAUTHORITY(可信 cookie) ----
+XAUTH=""
+for p in "/run/user/$U_UID/gdm/Xauthority" "/run/user/$U_UID/xdg/Xauthority" "$U_HOME/.Xauthority"; do
+    [ -f "$p" ] && XAUTH="$p" && break
+done
+[ -z "$XAUTH" ] && XAUTH="$(find "/run/user/$U_UID" "$U_HOME" -maxdepth 2 -name Xauthority 2>/dev/null | head -1)"
+[ -n "$XAUTH" ] || { echo "找不到 $RUNAS 的 XAUTHORITY, 请确认已登录桌面会话"; exit 1; }
+
 cat > "$UNIT" <<UNITEOF
 [Unit]
 Description=Wood Defect Detector (木板瑕疵检测)
-After=network.target multi-user.target
+After=graphical.target
+Wants=graphical.target
 
 [Service]
 Type=simple
+User=$RUNAS
+Group=$RUNAS
 WorkingDirectory=$DIR
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=$XAUTH
+ExecStartPre=/bin/sh -c 'for i in \$(seq 1 30); do [ -S /tmp/.X11-unix/X0 ] && exit 0; sleep 1; done; exit 1'
 ExecStart=$DIR/run.sh
-Environment=LD_LIBRARY_PATH=$DIR/lib
 Restart=always
 RestartSec=3
-# Modbus 502 端口(<1024) 需要 root; 若想普通用户跑:
-#   去掉下面 User=root, 并执行: sudo setcap cap_net_bind_service=+ep $DIR/$APP
-User=root
+LimitCORE=0
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target
 UNITEOF
+
+# 非 root 运行: 给 502 端口绑定权(一次永久; 替换二进制后需重跑本脚本)
+setcap cap_net_bind_service=+ep "$DIR/$APP" 2>/dev/null \
+    || echo "警告: setcap 失败, 502 端口可能绑不上"
 
 systemctl daemon-reload
 systemctl enable "$SVC"
-echo "已安装。"
+echo "已安装(以 $RUNAS 用户运行)。"
 echo "  启动:    sudo systemctl start  $SVC"
 echo "  状态:    sudo systemctl status $SVC"
 echo "  看日志:  sudo journalctl -u $SVC -f"
