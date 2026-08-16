@@ -184,11 +184,13 @@ void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defec
     if (px + panel_w > frame.cols) px = std::max(0, frame.cols - panel_w - 8);
     if (py + panel_h > frame.rows) py = std::max(0, frame.rows - panel_h - 8);
 
-    // 半透明黑底(轻压暗, 板子能透出来)
-    cv::Mat overlay;
-    frame.copyTo(overlay);
-    cv::rectangle(overlay, cv::Rect(px, py, panel_w, panel_h), cv::Scalar(0, 0, 0), cv::FILLED);
-    cv::addWeighted(overlay, 0.40, frame, 0.60, 0, frame);
+    // 半透明黑底：只混合面板那一小块区域, 不整帧操作。
+    // 整帧 copyTo + addWeighted 要在 2592x1944 全图上各扫一遍(memcpy ~15MB + 混合读3写1 ~60MB 带宽),
+    // Jetson 上每板额外花几十毫秒(实测单板耗时被拉到 243ms), 是耗时大头 —— 只在面板 ROI 上混合, 降到亚毫秒
+    cv::Rect roi(px, py, panel_w, panel_h);
+    cv::Mat  panel = frame(roi).clone();                        // 只拷面板一块
+    cv::Mat  black(roi.size(), frame.type(), cv::Scalar(0, 0, 0));
+    cv::addWeighted(panel, 0.60, black, 0.40, 0, frame(roi));   // 直接写回原图该区域
 
     // 文字：每行颜色跟随类别框颜色。
     // 先描黑边、再叠彩色 —— 深色类(如 quebian 深红)在半透明底上也像加粗一样清晰
