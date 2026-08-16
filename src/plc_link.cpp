@@ -1,4 +1,5 @@
 #include "plc_link.h"
+#include "logger.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -23,7 +24,7 @@ PlcLink::~PlcLink() {
 bool PlcLink::start() {
     _ctx = modbus_new_tcp(nullptr, _port);  // nullptr → 监听所有网口
     if (!_ctx) {
-        std::cerr << "[PLC] modbus_new_tcp 失败: " << modbus_strerror(errno) << std::endl;
+        LOGE << "[PLC] modbus_new_tcp 失败: " << modbus_strerror(errno);
         return false;
     }
 
@@ -33,10 +34,10 @@ bool PlcLink::start() {
     // 调试关闭（生产环境不开，避免刷屏）
     modbus_set_debug(_ctx, 0);
 
-    // 分配寄存器映射: 0 coil, 0 discrete input, 3 holding registers, 0 input registers
-    _mb_mapping = modbus_mapping_new(0, 0, 3, 0);
+    // 分配寄存器映射: 0 coil, 0 discrete input, 4 holding registers, 0 input registers
+    _mb_mapping = modbus_mapping_new(0, 0, 4, 0);
     if (!_mb_mapping) {
-        std::cerr << "[PLC] modbus_mapping_new 失败: " << modbus_strerror(errno) << std::endl;
+        LOGE << "[PLC] modbus_mapping_new 失败: " << modbus_strerror(errno);
         modbus_free(_ctx);
         _ctx = nullptr;
         return false;
@@ -46,6 +47,7 @@ bool PlcLink::start() {
     _mb_mapping->tab_registers[0] = 0;   // HR0: 触发（0=空闲）
     _mb_mapping->tab_registers[1] = 0;   // HR1: 结果（0=空闲）
     _mb_mapping->tab_registers[2] = 1;   // HR2: 状态（1=就绪）
+    _mb_mapping->tab_registers[3] = 0;   // HR3: 完成标志（0=无待取结果, 1=结果已写好等 PLC 取走）
 
     // 初始化边缘检测基准，避免启动时如果 PLC 已经写 1 产生误触发
     _prev_hr0 = _mb_mapping->tab_registers[0];
@@ -55,8 +57,8 @@ bool PlcLink::start() {
     _running.store(true);
     _server_thread = std::thread(&PlcLink::serverLoop, this);
 
-    std::cout << "[PLC] Modbus TCP Server 已启动, 端口=" << _port
-              << ", 从站ID=1, 等待 PLC 连接..." << std::endl;
+    LOGI << "[PLC] Modbus TCP Server 已启动, 端口=" << _port
+         << ", 从站ID=1, 等待 PLC 连接...";
     return true;
 }
 
@@ -100,7 +102,7 @@ void PlcLink::stop() {
         _ctx = nullptr;
     }
 
-    std::cout << "[PLC] Modbus TCP Server 已停止" << std::endl;
+    LOGI << "[PLC] Modbus TCP Server 已停止";
 }
 
 // ============================================================
@@ -109,8 +111,7 @@ void PlcLink::stop() {
 void PlcLink::serverLoop() {
     _server_socket = modbus_tcp_listen(_ctx, 1);  // backlog=1，单客户端
     if (_server_socket == -1) {
-        std::cerr << "[PLC] modbus_tcp_listen 失败: "
-                  << modbus_strerror(errno) << std::endl;
+        LOGE << "[PLC] modbus_tcp_listen 失败: " << modbus_strerror(errno);
         return;
     }
 
@@ -124,7 +125,7 @@ void PlcLink::serverLoop() {
         }
 
         _client_active.store(true);
-        std::cout << "[PLC] Modbus TCP 客户端已连接" << std::endl;
+        LOGI << "[PLC] Modbus TCP 客户端已连接";
 
         // 请求处理循环
         while (_running.load()) {
@@ -155,7 +156,7 @@ void PlcLink::serverLoop() {
         }
 
         _client_active.store(false);
-        std::cout << "[PLC] Modbus TCP 客户端断开" << std::endl;
+        LOGW << "[PLC] Modbus TCP 客户端断开";
     }
 }
 
@@ -176,6 +177,12 @@ bool PlcLink::waitTrigger(int timeout_ms) {
         if (_mb_mapping && _prev_hr0 == 0 && _mb_mapping->tab_registers[0] == 1) {
             _mb_mapping->tab_registers[0] = 0;
             _prev_hr0 = 0;
+            // 握手门禁: 上一板结果 PLC 还没应答(HR3=1)时, 拒绝新触发,
+            // 防止 HR1 被下一板结果覆盖导致 PLC 读到错的结果
+            if (_mb_mapping->tab_registers[3] != 0) {
+                LOGW << "[PLC] 上一板结果未应答(HR3=1), 忽略本次触发";
+                return false;
+            }
             return true;
         }
     }
@@ -209,6 +216,11 @@ bool PlcLink::waitTrigger(int timeout_ms) {
         if (_mb_mapping) {
             _mb_mapping->tab_registers[0] = 0;
             _prev_hr0 = 0;  // 重置边缘检测，等待下一个 0→1
+            // 握手门禁(同快速路径): 上一板结果未应答则拒绝本次触发
+            if (_mb_mapping->tab_registers[3] != 0) {
+                LOGW << "[PLC] 上一板结果未应答(HR3=1), 忽略本次触发";
+                return false;
+            }
         }
     }
 
@@ -237,6 +249,21 @@ bool PlcLink::resetResult() {
     if (!_mb_mapping) return false;
     _mb_mapping->tab_registers[1] = 0;    // 0 = 空闲
     return true;
+}
+
+// ============================================================
+// 完成标志 HR3（握手核心）
+// ============================================================
+bool PlcLink::setDone() {
+    std::lock_guard<std::mutex> lock(_mapping_mutex);
+    if (!_mb_mapping) return false;
+    _mb_mapping->tab_registers[3] = 1;    // 1 = 结果已写好，PLC 可读 HR1；读后写 0 应答
+    return true;
+}
+
+bool PlcLink::isDoneAcked() const {
+    std::lock_guard<std::mutex> lock(_mapping_mutex);
+    return !_mb_mapping || _mb_mapping->tab_registers[3] == 0;
 }
 
 // ============================================================

@@ -46,6 +46,7 @@ set(SOURCES
     src/postprocessor.cpp
     src/plc_link.cpp
     src/mainwindow.cpp
+    src/logger.cpp
 )
 
 set(HEADERS
@@ -57,6 +58,7 @@ set(HEADERS
     include/plc_link.h
     include/saveworker.h
     include/mainwindow.h
+    include/logger.h
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})

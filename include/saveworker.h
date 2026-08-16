@@ -1,5 +1,7 @@
 #pragma once
 
+#include "logger.h"
+
 /**
  * 异步存图线程 — 主线程只推任务，JPEG 编码 + 写盘全在后台线程
  *
@@ -9,7 +11,7 @@
  * 策略：
  *   - 队列满 → 丢弃本次存图（存图是抽样的，丢一张无所谓），主线程永不等待
  *   - 累计存图超 1GB → 停存（防硬盘写满），blocked() 供界面显示提示
- *   - 原始图存 output/raw/RAW_*.jpg（质量 80）；结果图存 output/OK_|NG_*.jpg（质量 70）
+ *   - 原始图存 output/raw/RAW_*.jpg（质量 80）；结果图存 output/result/OK_|NG_*.jpg（质量 70）
  */
 
 #include <thread>
@@ -98,7 +100,7 @@ private:
 
         std::string dir = job.raw
             ? std::string(Config::OUTPUT_DIR) + "raw/"
-            : Config::OUTPUT_DIR;
+            : std::string(Config::OUTPUT_DIR) + "result/";
         mkdir(dir.c_str(), 0755);
 
         std::ostringstream ss;
@@ -109,15 +111,15 @@ private:
         std::vector<int> jpg{cv::IMWRITE_JPEG_QUALITY,
                              job.raw ? RAW_JPG_QUALITY : RESULT_JPG_QUALITY};
         if (!cv::imwrite(ss.str(), job.img, jpg)) return;
-        std::cout << "[Save] " << (job.raw ? "原始图" : "结果图")
-                  << " → " << ss.str() << std::endl;
+        LOGI << "[Save] " << (job.raw ? "原始图" : "结果图")
+             << " → " << ss.str();
 
         // 累计字节，超 1GB 停存（_bytes 只有本线程写，不用锁）
         struct stat st;
         if (stat(ss.str().c_str(), &st) == 0) _bytes += (uint64_t)st.st_size;
         if (_bytes >= SAVE_CAP_BYTES) {
             _blocked = true;
-            std::cerr << "[SaveGuard] 累计存图超 1GB，停止存图（防硬盘写满）" << std::endl;
+            LOGE << "[SaveGuard] 累计存图超 1GB，停止存图（防硬盘写满）";
         }
     }
 

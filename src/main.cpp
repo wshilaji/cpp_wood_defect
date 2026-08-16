@@ -20,6 +20,7 @@
 #include <QString>
 
 #include "config.h"
+#include "logger.h"
 #include "camera.h"
 #include "infer.h"
 #include "postprocessor.h"
@@ -40,7 +41,7 @@ static PlcLink*         g_plc   = nullptr;
 
 static void cleanup_all() {
     if (g_cam && g_cam->isRunning()) {
-        std::cerr << "\n[CrashGuard] 强制释放相机..." << std::endl;
+        LOGE << "[CrashGuard] 强制释放相机...";
         g_cam->stop();
     }
     if (g_plc) {
@@ -49,7 +50,7 @@ static void cleanup_all() {
 }
 
 static void on_terminate() {
-    std::cerr << "\n[CrashGuard] std::terminate 触发" << std::endl;
+    LOGE << "[CrashGuard] std::terminate 触发";
     cleanup_all();
     std::abort();
 }
@@ -64,13 +65,13 @@ static void on_signal(int sig) {
     }
 
     if (sig == SIGINT || sig == SIGTERM) {
-        std::cerr << "\n[CrashGuard] " << name << " 收到，正在退出..." << std::endl;
+        LOGE << "[CrashGuard] " << name << " 收到，正在退出...";
         running = false;
         cleanup_all();
         return;
     }
 
-    std::cerr << "\n[CrashGuard] " << name << " 异常信号，尝试清理..." << std::endl;
+    LOGE << "[CrashGuard] " << name << " 异常信号，尝试清理...";
     cleanup_all();
     std::signal(sig, SIG_DFL);
     std::raise(sig);
@@ -137,14 +138,14 @@ int main(int argc, char** argv) {
     auto connectCamera = [&]() -> bool {
         cam.stop();   // 清残留状态保证重连干净（首次调用无操作）
         if (!cam.connectByIP(Config::CAMERA_IP)) {
-            std::cerr << "[Camera] 连接失败" << std::endl;
+            LOGE << "[Camera] 连接失败";
             return false;
         }
         // 用界面当前曝光/增益启动（工人调过的参数掉线重连后不丢）
         if (!cam.start(Config::CAMERA_WIDTH, Config::CAMERA_HEIGHT,
                        (float)win.exposureUs(), (float)win.gainDb(),
                        Config::CAMERA_TRIGGER)) {
-            std::cerr << "[Camera] 取流启动失败" << std::endl;
+            LOGE << "[Camera] 取流启动失败";
             cam.stop();
             return false;
         }
@@ -153,14 +154,14 @@ int main(int argc, char** argv) {
 
     try {
         if (!connectCamera()) {
-            std::cerr << "[Camera] 启动连接失败，进入后台重连模式（主循环持续重试）" << std::endl;
+            LOGE << "[Camera] 启动连接失败，进入后台重连模式（主循环持续重试）";
         }
         win.setCamRunning(cam.isRunning());
 
         // ---- 推理引擎 ----
         InferEngine infer;
         if (!infer.load(Config::ENGINE_PATH)) {
-            std::cerr << "引擎加载失败" << std::endl;
+            LOGE << "引擎加载失败";
             cam.stop();
             return -2;
         }
@@ -173,7 +174,7 @@ int main(int argc, char** argv) {
         PlcLink plc(Config::PLC_TCP_PORT);
         g_plc = &plc;
         if (!plc.start()) {
-            std::cerr << "PLC TCP Server 启动失败" << std::endl;
+            LOGE << "PLC TCP Server 启动失败";
             cam.stop();
             return -3;
         }
@@ -184,8 +185,8 @@ int main(int argc, char** argv) {
             plc.sendReady(ready);          // 就绪 → HR2=1；故障 → HR2=0
             win.setCamFault(!ready);       // 故障 → 红灯；恢复 → 清红灯
             win.setCamRunning(ready);      // 就绪 → 绿
-            if (ready) std::cout << "[Camera] 重连成功" << std::endl;
-            else       std::cerr << "[Camera] 连续空帧判定故障 → 通知 PLC（HR2=0）" << std::endl;
+            if (ready) LOGI << "[Camera] 重连成功";
+            else       LOGE << "[Camera] 连续空帧判定故障 → 通知 PLC（HR2=0）";
         }, cam.isRunning());
 
         // ---- 异步存图线程（编码+写盘在后台，主循环零阻塞） ----
@@ -207,7 +208,7 @@ int main(int argc, char** argv) {
         int last_expo = Config::CAMERA_EXPOSURE;
         int last_gain = Config::CAMERA_GAIN;
 
-        std::cout << "系统就绪（PLC 触发 / 界面手动拍照）\n" << std::endl;
+        LOGI << "系统就绪（PLC 触发 / 界面手动拍照）";
 
         while (running) {
             // 保持 UI 响应（事件泵）
@@ -227,14 +228,16 @@ int main(int argc, char** argv) {
 
             // ---- 触发源: ①界面手动拍照 ②PLC ----
             bool triggered = false;
+            bool from_plc = false;
 
             if (win.takeManualTrigger()) {
                 triggered = true;
-                std::cout << "[UI] 手动拍照" << std::endl;
+                LOGI << "[UI] 手动拍照";
             }
 
             if (!triggered && plc.waitTrigger(50)) {
                 triggered = true;
+                from_plc = true;   // 只有 PLC 触发才走握手(HR3), 手动拍照不置 HR3
             }
 
             if (!triggered) {
@@ -261,7 +264,7 @@ int main(int argc, char** argv) {
 
             cv::Mat frame = cam.readNewest(since, 500);
             if (frame.empty()) {
-                std::cerr << "[Camera] 触发后未获取到图像" << std::endl;
+                LOGE << "[Camera] 触发后未获取到图像";
                 if (camGuard.onMiss()) cam.stop();   // 连续 3 次空帧判故障：停相机，下轮 poll 自动重连
                 continue;
             }
@@ -331,6 +334,9 @@ int main(int argc, char** argv) {
             // 发送结果给 PLC（每帧零日志，结果只走 Modbus 不发控制台）
             if (is_ng) plc.sendNG();
             else       plc.sendOK();
+            // 握手: 只有 PLC 触发的板才置 HR3=1 等 PLC 应答。手动拍照不置,
+            // 否则 HR3 钉死没人应答, 会把后续 PLC 触发全卡住。
+            if (from_plc) plc.setDone();
 
             pt.dump();
 
@@ -350,8 +356,8 @@ int main(int argc, char** argv) {
             fps.add(pt.elapsed());
 
             if (total % 50 == 0)
-                std::cout << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
-                          << " | 检测:" << total << " | NG:" << ng_total << std::endl;
+                LOGI << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
+                     << " | 检测:" << total << " | NG:" << ng_total;
 
         }
 
@@ -359,17 +365,17 @@ int main(int argc, char** argv) {
         cam.stop();
         saver.stop();   // 等后台把排队中的存图写完再退出
         auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        std::cout << "\n停止 | 运行:" << (int)dt << "s | 检测:" << total
-                  << " | NG:" << ng_total << std::endl;
+        LOGI << "停止 | 运行:" << (int)dt << "s | 检测:" << total
+             << " | NG:" << ng_total;
         return 0;
 
     } catch (const std::exception& e) {
-        std::cerr << "异常: " << e.what() << std::endl;
+        LOGE << "异常: " << e.what();
         if (g_plc) g_plc->stop();
         cam.stop();
         return -5;
     } catch (...) {
-        std::cerr << "未知异常" << std::endl;
+        LOGE << "未知异常";
         if (g_plc) g_plc->stop();
         cam.stop();
         return -6;

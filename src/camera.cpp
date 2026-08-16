@@ -1,4 +1,5 @@
 #include "camera.h"
+#include "logger.h"
 #include <iostream>
 #include <chrono>
 #include <sstream>
@@ -25,18 +26,18 @@ bool HikvisionCamera::enumDevices() {
     // 枚举所有 GigE / USB / CameraLink 设备
     int ret = MV_CC_EnumDevices(MV_GIGE_DEVICE | MV_USB_DEVICE, &_device_list);
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 枚举设备失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+        LOGE << "[Camera] 枚举设备失败, 错误码: 0x"
+                  << std::hex << ret << std::dec ;
         return false;
     }
 
     if (_device_list.nDeviceNum == 0) {
-        std::cerr << "[Camera] 未找到任何海康相机设备" << std::endl;
+        LOGE << "[Camera] 未找到任何海康相机设备" ;
         return false;
     }
 
-    std::cout << "[Camera] 找到 " << _device_list.nDeviceNum
-              << " 个设备:" << std::endl;
+    LOGI << "[Camera] 找到 " << _device_list.nDeviceNum
+              << " 个设备:" ;
 
     for (unsigned int i = 0; i < _device_list.nDeviceNum; ++i) {
         MV_CC_DEVICE_INFO* info = _device_list.pDeviceInfo[i];
@@ -50,21 +51,21 @@ bool HikvisionCamera::enumDevices() {
             snprintf(model, sizeof(model), "%s",
                      info->SpecialInfo.stGigEInfo.chModelName);
             uint32_t ip = info->SpecialInfo.stGigEInfo.nCurrentIp;
-            std::cout << "  [" << i << "] " << model
+            LOGI << "  [" << i << "] " << model
                       << " | SN: " << serial
                       << " | IP: " << ((ip >> 24) & 0xFF) << "."
                                     << ((ip >> 16) & 0xFF) << "."
                                     << ((ip >> 8) & 0xFF) << "."
-                                    << (ip & 0xFF) << std::endl;
+                                    << (ip & 0xFF) ;
         } else if (info->nTLayerType == MV_USB_DEVICE) {
             // USB 相机
             snprintf(serial, sizeof(serial), "%s",
                      info->SpecialInfo.stUsb3VInfo.chSerialNumber);
             snprintf(model, sizeof(model), "%s",
                      info->SpecialInfo.stUsb3VInfo.chModelName);
-            std::cout << "  [" << i << "] " << model
+            LOGI << "  [" << i << "] " << model
                       << " | SN: " << serial
-                      << " | USB" << std::endl;
+                      << " | USB" ;
         }
     }
     return true;
@@ -126,9 +127,9 @@ bool HikvisionCamera::connectBySerial(const std::string& serial,
 
     int idx = findDevice(serial, ip, user_id);
     if (idx < 0) {
-        std::cerr << "[Camera] 未找到匹配的相机 (serial=" << serial
+        LOGE << "[Camera] 未找到匹配的相机 (serial=" << serial
                   << ", ip=" << ip
-                  << ", user_id=" << user_id << ")" << std::endl;
+                  << ", user_id=" << user_id << ")" ;
         return false;
     }
     return openDevice(idx);
@@ -138,7 +139,7 @@ bool HikvisionCamera::connectByIP(const std::string& ip) {
     if (!enumDevices()) return false;
     int idx = findDevice("", ip, "");
     if (idx < 0) {
-        std::cerr << "[Camera] 未找到 IP=" << ip << " 的相机" << std::endl;
+        LOGE << "[Camera] 未找到 IP=" << ip << " 的相机" ;
         return false;
     }
     return openDevice(idx);
@@ -148,7 +149,7 @@ bool HikvisionCamera::connectByUserID(const std::string& user_id) {
     if (!enumDevices()) return false;
     int idx = findDevice("", "", user_id);
     if (idx < 0) {
-        std::cerr << "[Camera] 未找到 UserID=" << user_id << " 的相机" << std::endl;
+        LOGE << "[Camera] 未找到 UserID=" << user_id << " 的相机" ;
         return false;
     }
     return openDevice(idx);
@@ -163,30 +164,30 @@ bool HikvisionCamera::openDevice(int index) {
     // 创建句柄
     int ret = MV_CC_CreateHandle(&_handle, _device_list.pDeviceInfo[index]);
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 创建相机句柄失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+        LOGE << "[Camera] 创建相机句柄失败, 错误码: 0x"
+                  << std::hex << ret << std::dec ;
         return false;
     }
 
     // 打开设备
     ret = MV_CC_OpenDevice(_handle);
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 打开相机失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+        LOGE << "[Camera] 打开相机失败, 错误码: 0x"
+                  << std::hex << ret << std::dec ;
         MV_CC_DestroyHandle(_handle);
         _handle = nullptr;
         return false;
     }
 
-    std::cout << "[Camera] 相机已打开 (index=" << index << ")" << std::endl;
+    LOGI << "[Camera] 相机已打开 (index=" << index << ")" ;
 
     // 获取当前像素格式
     MVCC_ENUMVALUE pixel_fmt;
     ret = MV_CC_GetEnumValue(_handle, "PixelFormat", &pixel_fmt);
     if (ret == MV_OK) {
         _pixel_format = pixel_fmt.nCurValue;
-        std::cout << "[Camera] 当前像素格式: 0x"
-                  << std::hex << _pixel_format << std::dec << std::endl;
+        LOGI << "[Camera] 当前像素格式: 0x"
+                  << std::hex << _pixel_format << std::dec ;
 
         // 判断是否是 Bayer 格式
         unsigned int bayer_fmts[] = {
@@ -219,12 +220,12 @@ void HikvisionCamera::closeDevice() {
     if (_handle) {
         // 恢复连续采集模式，避免相机残留硬触发状态导致其他程序无法取流
         MV_CC_SetEnumValue(_handle, "TriggerMode", MV_TRIGGER_MODE_OFF);
-        std::cout << "[Camera] 已恢复连续采集模式" << std::endl;
+        LOGI << "[Camera] 已恢复连续采集模式" ;
 
         MV_CC_CloseDevice(_handle);
         MV_CC_DestroyHandle(_handle);
         _handle = nullptr;
-        std::cout << "[Camera] 相机已关闭" << std::endl;
+        LOGI << "[Camera] 相机已关闭" ;
     }
 }
 
@@ -236,12 +237,12 @@ bool HikvisionCamera::setPixelFormat(const std::string& format) {
     int ret = MV_CC_SetEnumValueByString(_handle, "PixelFormat",
                                            format.c_str());
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 设置像素格式 " << format
+        LOGE << "[Camera] 设置像素格式 " << format
                   << " 失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+                  << std::hex << ret << std::dec ;
         return false;
     }
-    std::cout << "[Camera] 像素格式设为: " << format << std::endl;
+    LOGI << "[Camera] 像素格式设为: " << format ;
     return true;
 }
 
@@ -277,13 +278,13 @@ bool HikvisionCamera::setTriggerMode(int mode) {
             break;
         }
         default:
-            std::cerr << "[Camera] 无效的触发模式: " << mode << std::endl;
+            LOGE << "[Camera] 无效的触发模式: " << mode ;
             return false;
     }
 
-    std::cout << "[Camera] 触发模式: "
+    LOGI << "[Camera] 触发模式: "
               << (mode == 0 ? "连续" : mode == 1 ? "软触发" : "硬触发(Line0)")
-              << std::endl;
+              ;
     return true;
 }
 
@@ -294,11 +295,11 @@ bool HikvisionCamera::setExposureTime(float us) {
     if (!_handle || us < 0) return false;
     int ret = MV_CC_SetFloatValue(_handle, "ExposureTime", us);
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 设置曝光失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+        LOGE << "[Camera] 设置曝光失败, 错误码: 0x"
+                  << std::hex << ret << std::dec ;
         return false;
     }
-    std::cout << "[Camera] 曝光时间: " << us << " us" << std::endl;
+    LOGI << "[Camera] 曝光时间: " << us << " us" ;
     return true;
 }
 
@@ -309,11 +310,11 @@ bool HikvisionCamera::setGain(float db) {
     if (!_handle || db < 0) return false;
     int ret = MV_CC_SetFloatValue(_handle, "Gain", db);
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 设置增益失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+        LOGE << "[Camera] 设置增益失败, 错误码: 0x"
+                  << std::hex << ret << std::dec ;
         return false;
     }
-    std::cout << "[Camera] 模拟增益: " << db << " dB" << std::endl;
+    LOGI << "[Camera] 模拟增益: " << db << " dB" ;
     return true;
 }
 
@@ -327,8 +328,8 @@ bool HikvisionCamera::setGamma(bool enable, float gamma) {
         MV_CC_SetFloatValue(_handle, "Gamma", gamma);
     }
     if (ret == MV_OK) {
-        std::cout << "[Camera] Gamma: " << (enable ? "ON" : "OFF")
-                  << (enable ? " (" + std::to_string(gamma) + ")" : "") << std::endl;
+        LOGI << "[Camera] Gamma: " << (enable ? "ON" : "OFF")
+                  << (enable ? " (" + std::to_string(gamma) + ")" : "") ;
     }
     return (ret == MV_OK);
 }
@@ -373,11 +374,11 @@ bool HikvisionCamera::registerCallback() {
     if (!_handle) return false;
     int ret = MV_CC_RegisterImageCallBackEx(_handle, onImageCallback, this);
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 注册图像回调失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+        LOGE << "[Camera] 注册图像回调失败, 错误码: 0x"
+                  << std::hex << ret << std::dec ;
         return false;
     }
-    std::cout << "[Camera] 图像回调已注册" << std::endl;
+    LOGI << "[Camera] 图像回调已注册" ;
     return true;
 }
 
@@ -389,7 +390,7 @@ bool HikvisionCamera::start(int width, int height,
                              float gain_db,
                              int trigger_mode) {
     if (!_handle) {
-        std::cerr << "[Camera] 相机未打开，无法启动" << std::endl;
+        LOGE << "[Camera] 相机未打开，无法启动" ;
         return false;
     }
 
@@ -428,19 +429,19 @@ bool HikvisionCamera::start(int width, int height,
     // ---- 7. 开始取流 ----
     int ret = MV_CC_StartGrabbing(_handle);
     if (ret != MV_OK) {
-        std::cerr << "[Camera] 开始取流失败, 错误码: 0x"
-                  << std::hex << ret << std::dec << std::endl;
+        LOGE << "[Camera] 开始取流失败, 错误码: 0x"
+                  << std::hex << ret << std::dec ;
         return false;
     }
 
     _grabbing.store(true);
     _running.store(true);
 
-    std::cout << "[Camera] 取流已启动 "
+    LOGI << "[Camera] 取流已启动 "
               << "(宽=" << width << ", 高=" << height
               << ", 曝光=" << exposure_us << "us"
               << ", 增益=" << gain_db << "dB)"
-              << std::endl;
+              ;
 
     return true;
 }
@@ -456,7 +457,7 @@ void HikvisionCamera::stop() {
     std::lock_guard<std::mutex> lock(_mutex);
     _buffer.clear();
 
-    std::cout << "[Camera] 已停止" << std::endl;
+    LOGI << "[Camera] 已停止" ;
 }
 
 // ============================================================
