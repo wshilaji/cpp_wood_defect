@@ -65,6 +65,7 @@ sudo systemctl status wood-defect-detector               # 看状态
 sudo journalctl -u wood-defect-detector -f               # 实时看日志
 sudo systemctl disable --now wood-defect-detector        # 停止 + 开机不再自启
 sudo systemctl enable --now wood-defect-detector         # 开机自启 + 立即启动
+sudo systemctl disable --now wood-defect-detector && sudo rm /etc/systemd/system/wood-defect-detector.service   # 彻底卸载(移除服务)
 ```
 
 - `stop` 是正常停止，`Restart=always` 只对崩溃自动重启，不会把主动停掉的拉起来。
