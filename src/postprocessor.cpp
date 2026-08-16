@@ -190,9 +190,12 @@ void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defec
     cv::rectangle(overlay, cv::Rect(px, py, panel_w, panel_h), cv::Scalar(0, 0, 0), cv::FILLED);
     cv::addWeighted(overlay, 0.40, frame, 0.60, 0, frame);
 
-    // 文字：每行颜色跟随类别框颜色
+    // 文字：每行颜色跟随类别框颜色。
+    // 先描黑边、再叠彩色 —— 深色类(如 quebian 深红)在半透明底上也像加粗一样清晰
     int ty = py + pad + line_h;
     for (size_t i = 0; i < lines.size(); ++i) {
+        cv::putText(frame, lines[i], cv::Point(px + pad + 1, ty + 1),
+                    cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(0, 0, 0), thickness + 2);
         cv::putText(frame, lines[i], cv::Point(px + pad, ty),
                     cv::FONT_HERSHEY_SIMPLEX, fs, colors[i], thickness);
         ty += line_h + gap;
