@@ -15,9 +15,17 @@
  *   HR0 — TRIGGER : PLC 写 1 触发拍照，Nano 消费后清 0
  *   HR1 — RESULT  : 0=空闲, 1=OK, 2=NG
  *   HR2 — STATUS  : 0=未就绪/故障, 1=就绪（相机掉线/连续空帧时 Nano 置 0，PLC 据此报警停机）
- *   HR3 — DONE    : 握手完成标志。Nano 写好 HR1 后置 1 通知 PLC"结果可取"，
- *                   PLC 读走 HR1 后写 0 应答（ack）。HR3=1 期间 Nano 拒绝新触发，
- *                   防止结果被下一板覆盖 —— 通信不再依赖 PLC 定时猜时序。
+ *   HR3 — DONE    : 完成标志。Nano 写好 HR1 后置 1 通知 PLC"结果可取"，收到应答后清 0。
+ *                   只由 Nano 写、PLC 读（PLC 端只建读标签），PLC 不写它。
+ *   HR4 — ACK     : 应答标志。PLC 取走 HR1 后写 1 应答，Nano 检测 0→1 边沿后清 HR3 并复位 HR4。
+ *                   只由 PLC 写、Nano 读（PLC 端只建写标签）。
+ *
+ * 为什么拆成两个寄存器：PLC 若对同一个寄存器"又建读标签又建写标签"，
+ * 读轮询每周期把寄存器值刷回本地变量，会覆盖程序刚写的应答 → HR3 永远钉 1 卡死。
+ * 拆开后 HR3 上 PLC 只读、HR4 上 PLC 只写，方向互不冲突，FStudio 标签各自单向即可。
+ *
+ * 握手：Nano 置 HR3=1 → PLC 读 HR1 → PLC 写 HR4=1 → Nano 清 HR3、复位 HR4 → 接下一板。
+ * HR3=1 期间 Nano 拒绝新触发，防止结果被下一板覆盖 —— 通信不依赖 PLC 定时猜时序。
  *
  * PLC 侧只需配 Modbus TCP 主站，读写对应寄存器即可，无需写 Socket 自由口程序。
  * 触发条件建议加"HR3=0"门禁（上一板结果取走后才允许新触发）。
@@ -50,7 +58,7 @@ public:
     /** 清空检测结果（HR1 ← 0，空闲），新一板开始时调用，避免 PLC 读到上一板残留结果 */
     bool resetResult();
 
-    /** 置完成标志 HR3 ← 1：结果已写好，PLC 读 HR1 后写 0 应答。检测完成、sendOK/NG 之后调用 */
+    /** 置完成标志 HR3 ← 1：结果已写好，PLC 读 HR1 后写 HR4=1 应答。检测完成、sendOK/NG 之后调用 */
     bool setDone();
 
     /** PLC 是否已应答（HR3 == 0）。为 false 表示上一板结果 PLC 还没取走，不应接收新触发 */
@@ -76,5 +84,6 @@ private:
     std::condition_variable _trigger_cv;
     std::atomic<bool>      _trigger_pending{false};
     std::atomic<bool>      _waiting{false};
-    uint16_t               _prev_hr0 = 0;   // 边缘检测：只有 0→1 才触发
+    uint16_t               _prev_hr0 = 0;   // HR0 边缘检测：只有 0→1 才触发
+    uint16_t               _prev_hr4 = 0;   // HR4 边缘检测：PLC 应答 0→1 边沿
 };

@@ -334,7 +334,7 @@ int main(int argc, char** argv) {
             // 发送结果给 PLC（每帧零日志，结果只走 Modbus 不发控制台）
             if (is_ng) plc.sendNG();
             else       plc.sendOK();
-            // 握手: 只有 PLC 触发的板才置 HR3=1 等 PLC 应答。手动拍照不置,
+            // 握手: 只有 PLC 触发的板才置 HR3=1 等 PLC 应答(写 HR4)。手动拍照不置,
             // 否则 HR3 钉死没人应答, 会把后续 PLC 触发全卡住。
             if (from_plc) plc.setDone();
 

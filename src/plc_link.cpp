@@ -34,8 +34,8 @@ bool PlcLink::start() {
     // 调试关闭（生产环境不开，避免刷屏）
     modbus_set_debug(_ctx, 0);
 
-    // 分配寄存器映射: 0 coil, 0 discrete input, 4 holding registers, 0 input registers
-    _mb_mapping = modbus_mapping_new(0, 0, 4, 0);
+    // 分配寄存器映射: 0 coil, 0 discrete input, 5 holding registers, 0 input registers
+    _mb_mapping = modbus_mapping_new(0, 0, 5, 0);
     if (!_mb_mapping) {
         LOGE << "[PLC] modbus_mapping_new 失败: " << modbus_strerror(errno);
         modbus_free(_ctx);
@@ -47,10 +47,12 @@ bool PlcLink::start() {
     _mb_mapping->tab_registers[0] = 0;   // HR0: 触发（0=空闲）
     _mb_mapping->tab_registers[1] = 0;   // HR1: 结果（0=空闲）
     _mb_mapping->tab_registers[2] = 1;   // HR2: 状态（1=就绪）
-    _mb_mapping->tab_registers[3] = 0;   // HR3: 完成标志（0=无待取结果, 1=结果已写好等 PLC 取走）
+    _mb_mapping->tab_registers[3] = 0;   // HR3: 完成标志（0=空闲, 1=结果已写好等 PLC 取走）
+    _mb_mapping->tab_registers[4] = 0;   // HR4: 应答（PLC 取走结果后写 1）
 
     // 初始化边缘检测基准，避免启动时如果 PLC 已经写 1 产生误触发
     _prev_hr0 = _mb_mapping->tab_registers[0];
+    _prev_hr4 = _mb_mapping->tab_registers[4];
     _trigger_pending.store(false);
     _waiting.store(false);
 
@@ -151,6 +153,21 @@ void PlcLink::serverLoop() {
                         }
                     }
                     _prev_hr0 = cur;
+                }
+
+                // HR4 应答检测：PLC 写 HR4 0→1 表示结果已取走，清完成标志并复位 HR4。
+                // 复位 HR4 让下个应答也是 0→1 边沿；HR3=0 时也复位，防漏边沿。
+                if (_mb_mapping) {
+                    uint16_t ack = _mb_mapping->tab_registers[4];
+                    if (_prev_hr4 == 0 && ack == 1) {
+                        if (_mb_mapping->tab_registers[3] == 1) {
+                            _mb_mapping->tab_registers[3] = 0;   // 清完成标志 → 解锁下一触发
+                        }
+                        _mb_mapping->tab_registers[4] = 0;       // 复位应答，等下个 0→1
+                        _prev_hr4 = 0;
+                    } else {
+                        _prev_hr4 = ack;
+                    }
                 }
             }
         }
