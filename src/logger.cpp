@@ -66,7 +66,8 @@ Logger& Logger::inst() {
 }
 
 Logger::Logger() {
-    // 确保目录存在（幂等）
+    // 确保目录存在（幂等）。mkdir 只建一层, 父目录不存在会失败(ENOENT), 要分开建
+    ::mkdir("./output", 0755);
     ::mkdir(LOG_DIR, 0755);
     openFile();
 }

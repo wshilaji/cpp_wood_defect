@@ -34,6 +34,10 @@
 class SaveWorker {
 public:
     explicit SaveWorker(size_t maxQueue = 4) : _maxQueue(maxQueue) {
+        // 存图目录一次性建好(mkdir 只建一层, 父目录先建), save() 里不再检查
+        ::mkdir("./output", 0755);
+        ::mkdir("./output/raw", 0755);
+        ::mkdir("./output/result", 0755);
         _th = std::thread([this] { run(); });
     }
 
@@ -98,10 +102,10 @@ private:
     void save(const Job& job) {
         if (job.img.empty()) return;
 
+        // 目录已在构造时建好, 这里不再 mkdir
         std::string dir = job.raw
             ? std::string(Config::OUTPUT_DIR) + "raw/"
             : std::string(Config::OUTPUT_DIR) + "result/";
-        mkdir(dir.c_str(), 0755);
 
         std::ostringstream ss;
         if (job.raw)      ss << dir << "RAW_";
@@ -110,7 +114,10 @@ private:
 
         std::vector<int> jpg{cv::IMWRITE_JPEG_QUALITY,
                              job.raw ? RAW_JPG_QUALITY : RESULT_JPG_QUALITY};
-        if (!cv::imwrite(ss.str(), job.img, jpg)) return;
+        if (!cv::imwrite(ss.str(), job.img, jpg)) {
+            LOGE << "[Save] 写图失败: " << ss.str();   // 之前静默失败, 现在报出来
+            return;
+        }
         LOGI << "[Save] " << (job.raw ? "原始图" : "结果图")
              << " → " << ss.str();
 
