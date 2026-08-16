@@ -6,8 +6,11 @@
  *   - car 检测到任意数量 → NG
  *   - 否则              → OK
  *
+ * 两种触发源:
+ *   - PLC 写 HR0=1        → 生产握手: reportResult 写 HR1+HR3, 等 PLC 写 HR4 应答
+ *   - 终端按回车          → 手动 debug 板: 纯拍照推理看结果, 不碰 PLC 寄存器
+ *
  * 运行: ./example_demo
- * 触发: 终端按回车 或 echo "TRIGGER" | nc <ip> 5000
  */
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -153,21 +156,22 @@ int main() {
         cv::waitKey(1);
 
         while (running) {
-            // 组合等待: TCP 或 终端输入
-            bool triggered = plc.waitTrigger(100);  // 100ms 超时，够快响应又不空转
+            // 触发源: PLC(生产握手) 或 终端回车(手动 debug 板)。先等 PLC 100ms。
+            // 板来源收在 PlcLink 内部: PLC 板 reportResult 才写 HR1+HR3; 手动板纯 debug 不碰 PLC。
+            auto src = plc.beginBoard(false, 100);   // 100ms 超时，够快响应又不空转
 
-            if (!triggered) {
+            if (src == BoardSource::None) {
                 struct pollfd pfd;
                 pfd.fd     = STDIN_FILENO;
                 pfd.events = POLLIN;
                 if (poll(&pfd, 1, 100) > 0) {
                     std::string line;
                     std::getline(std::cin, line);
-                    triggered = true;
+                    src = plc.beginBoard(true, 0);   // 终端 = 手动 debug 板, 立即返回 Manual
                 }
             }
 
-            if (triggered) {
+            if (src != BoardSource::None) {
                 // ---- 拍照 + 推理 ----
                 cv::Mat frame;
                 int retry = 0;
@@ -223,8 +227,9 @@ int main() {
                     std::cout << "[Save] " << save_path << std::endl;
                     // Debug end
 
-                    // 回复 PLC
-                    if (is_ng) plc.sendNG(); else plc.sendOK();
+                    // 回复 PLC: 只有 PLC 触发的板才写 HR1+HR3(握手, 等 PLC 写 HR4 应答)。
+                    // 终端触发 = 手动 debug 板, 不碰 PLC —— 纯拍照推理看结果
+                    if (src == BoardSource::Plc) plc.reportResult(!is_ng);
 
                     auto t2 = std::chrono::steady_clock::now();
                     double ms = std::chrono::duration<double, std::milli>(t2 - t1).count();
