@@ -346,7 +346,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     shutdownBtn->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:8px; color:#ffd2d2;"
                           "background:#7a1f1f; border-radius:6px;"));
-    auto* rebootBtn = new QPushButton(QString::fromUtf8("重启"), panel);
+    auto* rebootBtn = new QPushButton(QString::fromUtf8("重启电脑"), panel);
     rebootBtn->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:8px; color:#ffd2d2;"
                           "background:#6b4a1f; border-radius:6px;"));
@@ -529,7 +529,7 @@ void MainWindow::doReboot() {
                     QString::fromUtf8("确认重启"),
                     QString::fromUtf8("确定要重启整个系统吗？\n正在进行的检测将立即中断。"),
                     QMessageBox::NoButton, this);
-    auto* yes = box.addButton(QString::fromUtf8("重启"), QMessageBox::AcceptRole);
+    auto* yes = box.addButton(QString::fromUtf8("重启电脑"), QMessageBox::AcceptRole);
     box.addButton(QString::fromUtf8("取消"), QMessageBox::RejectRole);
     box.exec();
     if (box.clickedButton() != yes) return;
