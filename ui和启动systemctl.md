@@ -53,6 +53,25 @@ fc-list :lang=zh
 qmake --version        # 或 qmake-qt5 --version
 ```
 
+## 开机自启服务（systemctl 管理）
+
+程序以 systemd 服务运行，服务名 `wood-defect-detector`：
+
+```bash
+sudo systemctl stop wood-defect-detector                 # 停止当前程序
+sudo systemctl start wood-defect-detector                # 启动
+sudo systemctl restart wood-defect-detector              # 重启
+sudo systemctl status wood-defect-detector               # 看状态
+sudo journalctl -u wood-defect-detector -f               # 实时看日志
+sudo systemctl disable --now wood-defect-detector        # 停止 + 开机不再自启
+sudo systemctl enable --now wood-defect-detector         # 开机自启 + 立即启动
+```
+
+- `stop` 是正常停止，`Restart=always` 只对崩溃自动重启，不会把主动停掉的拉起来。
+- 界面由 `./run.sh` 启动，`run.sh` 会自动从桌面会话探测 DISPLAY/XAUTHORITY
+  （GDM 登录前后显示号会变，写死 :0 会连不上）。
+- 服务起不来先查日志：`sudo journalctl -u wood-defect-detector -n 50 --no-pager`。
+
 ## 备注
 
 - CMake 用的是系统 Qt（`find_package(QT NAMES Qt6 Qt5 ...)`），所以新机器编译前必须先装 `qtbase5-dev`。
