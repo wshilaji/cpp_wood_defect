@@ -65,6 +65,7 @@ protected:
 private:
     void updateImageDisplay();
     void doShutdown();   // 一键关机：确认后调用 systemctl poweroff
+    void doReboot();     // 一键重启：确认后调用 systemctl reboot
     bool verifySavePassword();   // 弹密码框，返回密码是否正确
     void renderCamLed();   // 相机灯三态渲染：故障红 > 运行绿 > 未连接灰
 

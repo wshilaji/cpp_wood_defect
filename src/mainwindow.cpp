@@ -340,12 +340,19 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     btnRow->addWidget(exit);
     v->addLayout(btnRow);
 
-    // 关机按钮（独立一行，防误触）
+    // 关机 / 重启按钮（同一行，防误触）
+    auto* powerRow = new QHBoxLayout;
     auto* shutdownBtn = new QPushButton(QString::fromUtf8("关机"), panel);
     shutdownBtn->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:8px; color:#ffd2d2;"
                           "background:#7a1f1f; border-radius:6px;"));
-    v->addWidget(shutdownBtn);
+    auto* rebootBtn = new QPushButton(QString::fromUtf8("重启"), panel);
+    rebootBtn->setStyleSheet(
+        QString::fromUtf8("font-size:16px; font-weight:bold; padding:8px; color:#ffd2d2;"
+                          "background:#6b4a1f; border-radius:6px;"));
+    powerRow->addWidget(shutdownBtn);
+    powerRow->addWidget(rebootBtn);
+    v->addLayout(powerRow);
     v->addStretch(1);
 
     scroll->setWidget(panel);
@@ -368,6 +375,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     connect(snap, &QPushButton::clicked, this, [this] { _manual = true; });
     connect(exit, &QPushButton::clicked, this, [this] { _exit = true; });
     connect(shutdownBtn, &QPushButton::clicked, this, [this] { doShutdown(); });
+    connect(rebootBtn,   &QPushButton::clicked, this, [this] { doReboot(); });
 }
 
 // ============================================================
@@ -512,4 +520,20 @@ void MainWindow::doShutdown() {
 
     QProcess::startDetached(QStringLiteral("systemctl"),
                             {QStringLiteral("poweroff")});
+}
+
+// 一键重启：确认后调用 systemctl reboot
+// systemctl reboot 走 logind，桌面登录用户即可，无需 sudo
+void MainWindow::doReboot() {
+    QMessageBox box(QMessageBox::Warning,
+                    QString::fromUtf8("确认重启"),
+                    QString::fromUtf8("确定要重启整个系统吗？\n正在进行的检测将立即中断。"),
+                    QMessageBox::NoButton, this);
+    auto* yes = box.addButton(QString::fromUtf8("重启"), QMessageBox::AcceptRole);
+    box.addButton(QString::fromUtf8("取消"), QMessageBox::RejectRole);
+    box.exec();
+    if (box.clickedButton() != yes) return;
+
+    QProcess::startDetached(QStringLiteral("systemctl"),
+                            {QStringLiteral("reboot")});
 }
