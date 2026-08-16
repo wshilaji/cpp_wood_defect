@@ -86,11 +86,12 @@ JetPack 系统镜像。
 > （`best.engine` 对应的 ONNX 模型 + 源码仓库），否则将来换机器无法重新生成引擎。
 
 ### 5. `Address already in use` / 端口 502 起不来
-502 < 1024 需要 root 权限。systemd 服务默认 `User=root` 已解决；手动 `./run.sh`
-请用 `sudo`，或给程序加权限：
+502 < 1024 需要 root 权限。`install-systemd.sh` 已给程序 `setcap` 授权（非 root 也
+能绑 502）；手动 `./run.sh` 请用 `sudo`，或手动加权限：
 ```bash
 sudo setcap cap_net_bind_service=+ep ./wood_defect_detector
 ```
+> 注意：替换了可执行文件后 `setcap` 会丢，需重跑 `install-systemd.sh` 或重新 setcap。
 
 ### 6. 相机连不上（GigE）
 - 相机和机器要在同一网段：相机 `192.168.2.10`，机器网卡 `192.168.2.100`。

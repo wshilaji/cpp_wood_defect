@@ -85,6 +85,39 @@ set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"                                   # models/ 与 output/ 相对本目录
 export LD_LIBRARY_PATH="$DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# ---- 动态探测桌面会话的 DISPLAY / XAUTHORITY ----
+# 为什么不能写死 DISPLAY=:0: GDM 登录前 greeter 占 :0, 用户登录后会话显示号会变
+# (常见变 :1), 会话的 cookie 也只对会话自己的 X 有效。从会话进程环境里读才永远对。
+find_session() {
+    local p env disp xauth want
+    # 权威 cookie = X server 的 -auth 参数(读得到才继续; greeter 阶段的 cookie
+    # 属于 gdm、当前用户读不了, 会一直等到用户会话真正起来)。
+    want="$(tr '\0' ' ' < "/proc/$(pgrep -x Xorg 2>/dev/null | head -1)/cmdline" 2>/dev/null \
+            | sed -n 's/.*-auth \([^ ]*\).*/\1/p')"
+    [ -n "$want" ] && [ -r "$want" ] || return 1
+    # 扫当前用户进程, 找 DISPLAY 有效且 XAUTHORITY 正好等于权威 cookie 的那个。
+    # 只认这份 cookie 能排除 NX 远程会话、任何过期/别的 X 的 cookie。
+    # 为什么不能猜编号/猜进程名: GDM 登录前后显示号会变(:0→:1), 且猜不到
+    # 具体进程名(gnome-session 的 comm 在 Linux 上被截断成 15 字符)。
+    for p in $(pgrep -u "$(id -un)" 2>/dev/null); do
+        env="$(tr '\0' '\n' < "/proc/$p/environ" 2>/dev/null || true)"
+        xauth="$(printf '%s\n' "$env" | sed -n 's/^XAUTHORITY=//p')"
+        [ "$xauth" = "$want" ] || continue
+        disp="$(printf '%s\n' "$env" | sed -n 's/^DISPLAY=//p')"
+        [ -n "$disp" ] && [ -S "/tmp/.X11-unix/X${disp#:}" ] || continue
+        export DISPLAY="$disp" XAUTHORITY="$xauth"
+        return 0
+    done
+    return 1
+}
+
+# 等桌面会话起来(最多 ~90 秒)。起不来就带空环境 exec, 交给 systemd 重启重试。
+for i in $(seq 1 90); do
+    if find_session; then break; fi
+    sleep 1
+done
+
 exec ./wood_defect_detector "$@"
 EOF
 chmod +x "$DIST/run.sh"
@@ -132,8 +165,9 @@ cat > "$DIST/install-systemd.sh" <<'EOF'
 #!/bin/bash
 # 安装为 systemd 自启动服务（工厂开机自动运行）
 # 用法: sudo ./install-systemd.sh
-# 要点: 以桌面用户身份 + DISPLAY/XAUTHORITY 跑 Qt GUI(否则连不上显示器);
-#       用 setcap 解决 502 端口权限(非 root 也能绑 <1024 端口)
+# 要点: 以桌面用户身份跑 Qt GUI; DISPLAY/XAUTHORITY 不写死, 由 run.sh 启动时
+#       从桌面会话动态探测(GDM 登录前后显示号会变, 写死 :0 必连不上);
+#       用 setcap 解决 502 端口权限(非 root 也能绑 <1024 端口)。
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 APP="wood_defect_detector"
@@ -146,16 +180,6 @@ UNIT="/etc/systemd/system/${SVC}.service"
 RUNAS="${SUDO_USER:-}"
 [ -z "$RUNAS" ] && RUNAS="$(loginctl list-sessions --no-legend 2>/dev/null | awk '$5=="seat0"{print $3; exit}')"
 [ -n "$RUNAS" ] || { echo "无法确定桌面用户, 请先登录桌面再运行"; exit 1; }
-U_UID="$(id -u "$RUNAS")"
-U_HOME="$(getent passwd "$RUNAS" | cut -d: -f6)"
-
-# ---- 探测桌面用户的 XAUTHORITY(可信 cookie) ----
-XAUTH=""
-for p in "/run/user/$U_UID/gdm/Xauthority" "/run/user/$U_UID/xdg/Xauthority" "$U_HOME/.Xauthority"; do
-    [ -f "$p" ] && XAUTH="$p" && break
-done
-[ -z "$XAUTH" ] && XAUTH="$(find "/run/user/$U_UID" "$U_HOME" -maxdepth 2 -name Xauthority 2>/dev/null | head -1)"
-[ -n "$XAUTH" ] || { echo "找不到 $RUNAS 的 XAUTHORITY, 请确认已登录桌面会话"; exit 1; }
 
 cat > "$UNIT" <<UNITEOF
 [Unit]
@@ -168,9 +192,7 @@ Type=simple
 User=$RUNAS
 Group=$RUNAS
 WorkingDirectory=$DIR
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=$XAUTH
-ExecStartPre=/bin/sh -c 'for i in \$(seq 1 30); do [ -S /tmp/.X11-unix/X0 ] && exit 0; sleep 1; done; exit 1'
+# DISPLAY / XAUTHORITY 由 run.sh 启动时动态探测, 这里不写死
 ExecStart=$DIR/run.sh
 Restart=always
 RestartSec=3

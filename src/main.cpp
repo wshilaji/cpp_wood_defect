@@ -15,8 +15,6 @@
 #include <exception>
 #include <iomanip>
 #include <fstream>
-#include <poll.h>
-#include <unistd.h>
 
 #include <QApplication>
 #include <QString>
@@ -200,7 +198,7 @@ int main(int argc, char** argv) {
             cam.readNewest(since, 500);   // 等预热帧到并丢弃
         }
 
-        // ---- 主循环（PLC / 手动拍照 / 回车后门 触发） ----
+        // ---- 主循环（PLC / 手动拍照 触发） ----
         FPS fps;
         uint64_t total = 0, ng_total = 0;
         auto t0 = std::chrono::steady_clock::now();
@@ -209,7 +207,7 @@ int main(int argc, char** argv) {
         int last_expo = Config::CAMERA_EXPOSURE;
         int last_gain = Config::CAMERA_GAIN;
 
-        std::cout << "系统就绪（PLC 触发 / 界面手动拍照 / 回车后门）\n" << std::endl;
+        std::cout << "系统就绪（PLC 触发 / 界面手动拍照）\n" << std::endl;
 
         while (running) {
             // 保持 UI 响应（事件泵）
@@ -227,7 +225,7 @@ int main(int argc, char** argv) {
             if (expo != last_expo) { cam.setExposureTime((float)expo); last_expo = expo; }
             if (gain != last_gain) { cam.setGain((float)gain);         last_gain = gain; }
 
-            // ---- 触发源: ①界面手动拍照 ②PLC ③回车后门 ----
+            // ---- 触发源: ①界面手动拍照 ②PLC ----
             bool triggered = false;
 
             if (win.takeManualTrigger()) {
@@ -237,18 +235,6 @@ int main(int argc, char** argv) {
 
             if (!triggered && plc.waitTrigger(50)) {
                 triggered = true;
-            }
-
-            if (!triggered) {
-                struct pollfd pfd;
-                pfd.fd     = STDIN_FILENO;
-                pfd.events = POLLIN;
-                if (poll(&pfd, 1, 0) > 0) {
-                    std::string line;
-                    std::getline(std::cin, line);
-                    triggered = true;
-                    std::cout << "[后门] 回车触发" << std::endl;
-                }
             }
 
             if (!triggered) {
