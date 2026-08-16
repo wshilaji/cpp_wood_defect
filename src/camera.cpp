@@ -37,37 +37,8 @@ bool HikvisionCamera::enumDevices() {
     }
 
     LOGI << "[Camera] 找到 " << _device_list.nDeviceNum
-              << " 个设备:" ;
+              << " 个设备";
 
-    for (unsigned int i = 0; i < _device_list.nDeviceNum; ++i) {
-        MV_CC_DEVICE_INFO* info = _device_list.pDeviceInfo[i];
-        char serial[64] = {0};
-        char model[64]  = {0};
-
-        if (info->nTLayerType == MV_GIGE_DEVICE) {
-            // GigE 相机
-            snprintf(serial, sizeof(serial), "%s",
-                     info->SpecialInfo.stGigEInfo.chSerialNumber);
-            snprintf(model, sizeof(model), "%s",
-                     info->SpecialInfo.stGigEInfo.chModelName);
-            uint32_t ip = info->SpecialInfo.stGigEInfo.nCurrentIp;
-            LOGI << "  [" << i << "] " << model
-                      << " | SN: " << serial
-                      << " | IP: " << ((ip >> 24) & 0xFF) << "."
-                                    << ((ip >> 16) & 0xFF) << "."
-                                    << ((ip >> 8) & 0xFF) << "."
-                                    << (ip & 0xFF) ;
-        } else if (info->nTLayerType == MV_USB_DEVICE) {
-            // USB 相机
-            snprintf(serial, sizeof(serial), "%s",
-                     info->SpecialInfo.stUsb3VInfo.chSerialNumber);
-            snprintf(model, sizeof(model), "%s",
-                     info->SpecialInfo.stUsb3VInfo.chModelName);
-            LOGI << "  [" << i << "] " << model
-                      << " | SN: " << serial
-                      << " | USB" ;
-        }
-    }
     return true;
 }
 
@@ -186,8 +157,6 @@ bool HikvisionCamera::openDevice(int index) {
     ret = MV_CC_GetEnumValue(_handle, "PixelFormat", &pixel_fmt);
     if (ret == MV_OK) {
         _pixel_format = pixel_fmt.nCurValue;
-        LOGI << "[Camera] 当前像素格式: 0x"
-                  << std::hex << _pixel_format << std::dec ;
 
         // 判断是否是 Bayer 格式
         unsigned int bayer_fmts[] = {
@@ -220,12 +189,10 @@ void HikvisionCamera::closeDevice() {
     if (_handle) {
         // 恢复连续采集模式，避免相机残留硬触发状态导致其他程序无法取流
         MV_CC_SetEnumValue(_handle, "TriggerMode", MV_TRIGGER_MODE_OFF);
-        LOGI << "[Camera] 已恢复连续采集模式" ;
 
         MV_CC_CloseDevice(_handle);
         MV_CC_DestroyHandle(_handle);
         _handle = nullptr;
-        LOGI << "[Camera] 相机已关闭" ;
     }
 }
 
@@ -242,7 +209,6 @@ bool HikvisionCamera::setPixelFormat(const std::string& format) {
                   << std::hex << ret << std::dec ;
         return false;
     }
-    LOGI << "[Camera] 像素格式设为: " << format ;
     return true;
 }
 
@@ -299,7 +265,6 @@ bool HikvisionCamera::setExposureTime(float us) {
                   << std::hex << ret << std::dec ;
         return false;
     }
-    LOGI << "[Camera] 曝光时间: " << us << " us" ;
     return true;
 }
 
@@ -314,7 +279,6 @@ bool HikvisionCamera::setGain(float db) {
                   << std::hex << ret << std::dec ;
         return false;
     }
-    LOGI << "[Camera] 模拟增益: " << db << " dB" ;
     return true;
 }
 
@@ -326,10 +290,6 @@ bool HikvisionCamera::setGamma(bool enable, float gamma) {
     int ret = MV_CC_SetBoolValue(_handle, "GammaEnable", enable);
     if (ret == MV_OK && enable) {
         MV_CC_SetFloatValue(_handle, "Gamma", gamma);
-    }
-    if (ret == MV_OK) {
-        LOGI << "[Camera] Gamma: " << (enable ? "ON" : "OFF")
-                  << (enable ? " (" + std::to_string(gamma) + ")" : "") ;
     }
     return (ret == MV_OK);
 }
@@ -378,7 +338,6 @@ bool HikvisionCamera::registerCallback() {
                   << std::hex << ret << std::dec ;
         return false;
     }
-    LOGI << "[Camera] 图像回调已注册" ;
     return true;
 }
 
@@ -456,8 +415,6 @@ void HikvisionCamera::stop() {
     // 清空缓冲
     std::lock_guard<std::mutex> lock(_mutex);
     _buffer.clear();
-
-    LOGI << "[Camera] 已停止" ;
 }
 
 // ============================================================

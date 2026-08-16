@@ -85,8 +85,10 @@ add_executable(example_demo
     example/example_demo.cpp
     src/camera.cpp
     src/plc_link.cpp
+    src/logger.cpp
     include/camera.h
     include/plc_link.h
+    include/logger.h
 )
 target_include_directories(example_demo PRIVATE
     ${CMAKE_SOURCE_DIR}/include
