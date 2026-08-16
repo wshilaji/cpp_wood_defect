@@ -164,9 +164,9 @@ void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defec
         }
     }
 
-    // 面板尺寸：字号保持能看清，不挡板子靠背景透明(alpha 调浅)而非把字弄小
-    const double fs = 0.5;
-    const int    thickness = 1;
+    // 面板尺寸：字放大 2 倍(0.5→1.0)加粗, 工人远看也要能看清
+    const double fs = 1.0;
+    const int    thickness = 2;
     int base = 0;
     int maxw = 0, line_h = 0;
     std::vector<cv::Size> sizes(lines.size());
@@ -175,14 +175,14 @@ void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defec
         maxw   = std::max(maxw, sizes[i].width);
         line_h = std::max(line_h, sizes[i].height);
     }
-    const int pad = 6, gap = 4;
+    const int pad = 10, gap = 8;
     int panel_w = maxw + pad * 2;
     int panel_h = (int)lines.size() * (line_h + gap) + pad * 2 - gap;
 
     // 左上角，超界自动缩回图内
-    int px = 6, py = 6;
-    if (px + panel_w > frame.cols) px = std::max(0, frame.cols - panel_w - 6);
-    if (py + panel_h > frame.rows) py = std::max(0, frame.rows - panel_h - 6);
+    int px = 8, py = 8;
+    if (px + panel_w > frame.cols) px = std::max(0, frame.cols - panel_w - 8);
+    if (py + panel_h > frame.rows) py = std::max(0, frame.rows - panel_h - 8);
 
     // 半透明黑底(轻压暗, 板子能透出来)
     cv::Mat overlay;
