@@ -34,6 +34,24 @@ static QImage cvMatToQImage(const cv::Mat& m) {
 }
 
 // ============================================================
+// 执行 systemctl 电源命令(poweroff/reboot), 返回是否成功。
+// systemd 托管时进程不在登录会话, polkit 可能拒绝(无认证代理)而失败,
+// 失败要让操作员看得见, 而不是 startDetached 那样静默。
+// ============================================================
+static bool runPowerCommand(const QString& verb) {
+    QProcess p;
+    p.start(QStringLiteral("systemctl"), {verb});
+    if (!p.waitForStarted(3000)) return false;
+    // logind 应答一般 <1s; 8s 兜底, 超时杀掉防 polkit 无人应答时挂死界面
+    if (!p.waitForFinished(8000)) {
+        p.kill();
+        p.waitForFinished(1000);
+        return false;
+    }
+    return p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0;
+}
+
+// ============================================================
 // 小工具: 状态灯行 / 统计行 / 输入框行
 // ============================================================
 static QLabel* addLedRow(const QString& name, QBoxLayout* lay) {
@@ -518,8 +536,11 @@ void MainWindow::doShutdown() {
     box.exec();
     if (box.clickedButton() != yes) return;
 
-    QProcess::startDetached(QStringLiteral("systemctl"),
-                            {QStringLiteral("poweroff")});
+    if (!runPowerCommand(QStringLiteral("poweroff")))
+        QMessageBox::critical(this, QString::fromUtf8("关机失败"),
+                              QString::fromUtf8("关机命令未执行成功，系统不会关机。\n"
+                                                "程序由 systemd 托管时进程不在登录会话，需要 polkit 授权。\n"
+                                                "请重跑：sudo ./install-systemd.sh（或 bash fix-systemd.sh）"));
 }
 
 // 一键重启：确认后调用 systemctl reboot
@@ -534,6 +555,9 @@ void MainWindow::doReboot() {
     box.exec();
     if (box.clickedButton() != yes) return;
 
-    QProcess::startDetached(QStringLiteral("systemctl"),
-                            {QStringLiteral("reboot")});
+    if (!runPowerCommand(QStringLiteral("reboot")))
+        QMessageBox::critical(this, QString::fromUtf8("重启失败"),
+                              QString::fromUtf8("重启命令未执行成功，系统不会重启。\n"
+                                                "程序由 systemd 托管时进程不在登录会话，需要 polkit 授权。\n"
+                                                "请重跑：sudo ./install-systemd.sh（或 bash fix-systemd.sh）"));
 }

@@ -181,6 +181,26 @@ RUNAS="${SUDO_USER:-}"
 [ -z "$RUNAS" ] && RUNAS="$(loginctl list-sessions --no-legend 2>/dev/null | awk '$5=="seat0"{print $3; exit}')"
 [ -n "$RUNAS" ] || { echo "无法确定桌面用户, 请先登录桌面再运行"; exit 1; }
 
+# ---- 界面"关机/重启"按钮授权 ----
+# 程序是 systemd 服务进程(User=RUNAS, Type=simple), 不在任何登录会话里,
+# polkit 对"活跃本地会话"默认放行, 但对无会话/非活跃会话要求管理员认证
+# (auth_admin_keep), 服务环境又没有 polkit 认证代理 → systemctl poweroff/reboot
+# 被拒, 界面点"关机"没反应。给 RUNAS 加一条规则, 让 poweroff/reboot 免认证。
+PKLA_DIR="/etc/polkit-1/localauthority/50-local.d"
+PKLA="$PKLA_DIR/49-wood-defect-power.pkla"
+mkdir -p "$PKLA_DIR"
+cat > "$PKLA" <<PKLAEOF
+[Wood defect detector power control]
+Identity=unix-user:$RUNAS
+Action=org.freedesktop.login1.power-off;org.freedesktop.login1.power-off-multiple-sessions;org.freedesktop.login1.power-off-ignore-inhibit;org.freedesktop.login1.reboot;org.freedesktop.login1.reboot-multiple-sessions;org.freedesktop.login1.reboot-ignore-inhibit
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+PKLAEOF
+chmod 644 "$PKLA"
+# localauthority 会自动感知文件变化; 主动重启一次确保立即生效
+systemctl restart polkit >/dev/null 2>&1 || true
+
 cat > "$UNIT" <<UNITEOF
 [Unit]
 Description=Wood Defect Detector (木板瑕疵检测)

@@ -73,6 +73,28 @@ sudo systemctl disable --now wood-defect-detector && sudo rm /etc/systemd/system
   （GDM 登录前后显示号会变，写死 :0 会连不上）。
 - 服务起不来先查日志：`sudo journalctl -u wood-defect-detector -n 50 --no-pager`。
 
+### 界面"关机 / 重启电脑"按钮没反应
+
+**现象**：确认框点"关机"后机器不关，界面无任何提示。**只在 systemd 托管后出现**。
+
+**原因**：关机按钮执行的是 `systemctl poweroff`（非 root）。非 root 走 logind，
+logind 用 polkit 校验权限。polkit 对 **活跃登录会话**里的进程默认放行
+（`allow_active=yes`），但程序现在是 systemd 服务进程（`User=桌面用户`），
+**不属于任何登录会话**，落到 `allow_any=auth_admin_keep` → 要求管理员认证；
+服务环境里没有 polkit 认证代理，认证永远满足不了 → 调用被拒、静默失败。
+
+**修复**：`install-systemd.sh` / `fix-systemd.sh` 会给桌面用户写一条 polkit 授权
+（`/etc/polkit-1/localauthority/50-local.d/49-wood-defect-power.pkla`），
+让 `poweroff/reboot`（含 multiple-sessions / ignore-inhibit 变体）免认证。
+已装旧版服务的话重跑一遍即可：
+
+```bash
+sudo ./install-systemd.sh     # 或 bash fix-systemd.sh
+```
+
+**验证**：以桌面用户跑 `systemctl poweroff`，机器应立即开始关机；
+不想真关就换 `systemctl status`（会打印 Access denied 之类）。
+
 ## 备注
 
 - CMake 用的是系统 Qt（`find_package(QT NAMES Qt6 Qt5 ...)`），所以新机器编译前必须先装 `qtbase5-dev`。

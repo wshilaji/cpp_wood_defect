@@ -300,17 +300,17 @@ A: 使用 `scp` 命令，在 Mac 终端执行：
 
 从 Jetson 拉取文件到 Mac 当前目录：
 ```bash
-scp dys@100.64.45.96:/home/dys/muye/YOLODataset.tar.gz .
+scp dys@192.168.1.26:/home/dys/muye/YOLODataset.tar.gz .
 ```
 
 从 Mac 推送文件到 Jetson：
 ```bash
-scp local_file.tar.gz dys@100.64.45.96:/home/dys/muye/
+scp local_file.tar.gz dys@192.168.1.26:/home/dys/muye/
 ```
 
 传文件夹加 `-r`：
 ```bash
-scp -r local_folder dys@100.64.45.96:/home/dys/muye/
+scp -r local_folder dys@192.168.1.26:/home/dys/muye/
 ```
 
 从 Mac 推送到 Nano（将 `dys` 换成 Nano 的用户名，IP 换成 Nano 的局域网 IP）：

@@ -102,6 +102,18 @@ sudo setcap cap_net_bind_service=+ep ./wood_defect_detector
 - GPU 设备节点：`ls /dev/nvidia*`（没有说明驱动没装好或权限不足，程序需在 root 或 video 组下跑）。
 - `./output/` 目录需要有写权限（`run.sh` 已自动 cd 到部署目录）。
 
+### 8. 界面点"关机 / 重启电脑"没反应
+程序由 systemd 托管时进程不在登录会话里，polkit 默认对无会话进程要求管理员认证，
+且服务环境没有认证代理 → `systemctl poweroff/reboot` 被拒（静默失败）。
+`install-systemd.sh` 已自动给桌面用户安装 polkit 授权
+（`/etc/polkit-1/localauthority/50-local.d/49-wood-defect-power.pkla`），免认证关机。
+若这台机器是用旧版 `install-systemd.sh` 装的（按钮失效），重跑一遍即可补装授权：
+```bash
+sudo ./install-systemd.sh     # 幂等：会补写 polkit 授权，不会重复起服务
+```
+验证授权是否生效：以桌面用户执行 `systemctl poweroff`（机器应立即开始关机；
+不想真关就换成 `systemctl status` 看是否报 Access denied）。
+
 ## 五、交付物清单（交付前确认）
 
 - [ ] 整个 `wood_defect_app/` 目录（含 `lib/` `models/`）

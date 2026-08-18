@@ -97,11 +97,28 @@ LimitCORE=0
 WantedBy=graphical.target
 UNITEOF
 
-# ---- 5. 502 端口权限(非 root 绑 <1024) ----
+# ---- 5. 界面"关机/重启"按钮授权 ----
+# 程序是 systemd 服务进程, 不在任何登录会话里, polkit 对无会话/非活跃会话
+# 默认要求管理员认证(auth_admin_keep)且服务环境没有认证代理 → systemctl
+# poweroff/reboot 被拒, 界面点"关机"没反应。给 RUNAS 加规则, 免认证。
+PKLA_DIR="/etc/polkit-1/localauthority/50-local.d"
+sudo mkdir -p "$PKLA_DIR"
+sudo tee "$PKLA_DIR/49-wood-defect-power.pkla" > /dev/null <<PKLAEOF
+[Wood defect detector power control]
+Identity=unix-user:$RUNAS
+Action=org.freedesktop.login1.power-off;org.freedesktop.login1.power-off-multiple-sessions;org.freedesktop.login1.power-off-ignore-inhibit;org.freedesktop.login1.reboot;org.freedesktop.login1.reboot-multiple-sessions;org.freedesktop.login1.reboot-ignore-inhibit
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+PKLAEOF
+# localauthority 会自动感知文件变化; 主动重启一次确保立即生效
+sudo systemctl restart polkit >/dev/null 2>&1 || true
+
+# ---- 6. 502 端口权限(非 root 绑 <1024) ----
 sudo setcap cap_net_bind_service=+ep "$APP_DIR/$APP" 2>/dev/null \
     || echo "警告: setcap 失败, 502 端口可能绑不上" >&2
 
-# ---- 6. 重载并重启 ----
+# ---- 7. 重载并重启 ----
 sudo systemctl daemon-reload
 sudo systemctl enable "$SVC"
 sudo systemctl restart "$SVC"
