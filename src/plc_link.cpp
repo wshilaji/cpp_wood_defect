@@ -164,7 +164,7 @@ void PlcLink::serverLoop() {
                             _mb_mapping->tab_registers[3] = 0;   // 清完成标志 → 解锁下一触发
                             // TODO(TEMP): 采样日志, 观察握手是否工作, 确认后注释掉
                             static unsigned ack_cnt = 0;
-                            if (++ack_cnt % 2 == 0)
+                            if (++ack_cnt % 10 == 0)
                                 LOGI << "[PLC] 应答采样: 第 " << ack_cnt
                                      << " 次应答, HR3 已清除";
                         }
@@ -179,6 +179,13 @@ void PlcLink::serverLoop() {
 
         _client_active.store(false);
         LOGW << "[PLC] Modbus TCP 客户端断开";
+
+        // 关键：必须在 accept 下一个客户端之前 modbus_close 释放本次连接。
+        // 否则旧 socket 一直挂在 ctx 上不关，PLC 断电重启后重连的新连接到不了
+        // accept()，表现为"电源恢复后永远连不上，必须重启程序"。
+        // modbus_close 只关当前连接，不影响 _server_socket（监听 socket），
+        // 之后可正常再次 modbus_tcp_accept。
+        modbus_close(_ctx);
     }
 }
 
