@@ -56,6 +56,13 @@ constexpr float CY          = 1024.0f;   // 2048/2
 constexpr float DISTANCE_MM = 1270.0f;   // 相机到木板距离 mm
 const std::vector<double> DIST_COEFFS = {0.0, 0.0, 0.0, 0.0, 0.0};
 
+// ---- 界面「退出」后的冷却时间 ----
+// 点界面「退出」是为了腾出桌面(开 RustDesk / 远程协助 / 改网络)。程序收到退出请求
+// 后先 hide() 掉全屏置顶窗口让桌面立刻可用, 但**进程不立刻结束**, 而是原地等这么久
+// 再退出。systemd 是 Type=simple+Restart=always, 看进程还活着就不会重启, 所以
+// "点退出 → 界面重新拉起"的总延时≈本值。崩溃路径不走这段等待(RestartSec 3s 恢复)。
+constexpr int   EXIT_RESTART_DELAY_SEC = 300;   // 5 分钟
+
 // ---- 输出 ----
 constexpr bool  SAVE_IMAGES   = true;
 constexpr bool  SHOW_DISPLAY  = true;

@@ -73,6 +73,46 @@ sudo systemctl disable --now wood-defect-detector && sudo rm /etc/systemd/system
   （GDM 登录前后显示号会变，写死 :0 会连不上）。
 - 服务起不来先查日志：`sudo journalctl -u wood-defect-detector -n 50 --no-pager`。
 
+### 界面点"退出"后多久才会自动拉起来
+
+**期望行为**：点"退出"是为了腾出桌面（开 RustDesk 让远程协助连进来、改网络设置等），
+全屏置顶的 kiosk 窗口必须马上消失；但又不希望它一直不起来，所以 **5 分钟**后自动恢复。
+
+**实现**：延时不在 systemd 里，在程序里（`Config::EXIT_RESTART_DELAY_SEC`，单位秒，
+默认 300 = 5 分钟）。`RestartSec` 保持 3 秒不动，好处是**崩溃恢复仍然只要 3 秒**——
+真挂了是产线停机的紧急情况，不能跟着一起等 5 分钟。
+
+点"退出"之后的顺序：
+
+| 步骤 | 发生什么 |
+|---|---|
+| 1 | `win.hide()` —— 全屏置顶窗口从 X11 unmap，桌面立刻可用（不是最小化） |
+| 2 | 停 PLC / 停相机 / 等存图线程收尾（此时界面已看不见） |
+| 3 | 出 try 作用域：推理引擎、PlcLink、SaveWorker 析构，显存释放、线程 join |
+| 4 | 进程**不退出**，原地倒数 5 分钟（每秒查一次信号） |
+| 5 | 进程正常退出 → systemd 按 `RestartSec=3` 拉起，界面回来 |
+
+第 4 步是整件事的关键：systemd 是 `Type=simple`，只看主进程死没死，**进程活着就不会重启**，
+所以这 5 分钟界面不会回来。这段时间进程里没有窗口、没有相机、没有 GPU 占用、没有后台线程，
+纯粹是个"闹钟"。
+
+> **注意**：点"退出"就是真的停检测——相机不取流、PLC 不响应、不推理，这 5 分钟里
+> **过板不会判 OK/NG**。现在的行为也是这样（退出即停），只是以前 3 秒就重启、现在 5 分钟。
+> 如果产线那 5 分钟还在过板，这是不行的。
+
+**常用操作**（两个都是立即生效，不用等满 5 分钟，因为倒数循环每秒查一次信号）：
+
+```bash
+sudo systemctl restart wood-defect-detector   # 界面提前回来
+sudo systemctl stop wood-defect-detector      # 让界面一直别回来（维护完再 start）
+```
+
+**调整时长**：改 `include/config.h` 里的 `EXIT_RESTART_DELAY_SEC` 后重新编译（改成 `0`
+就是恢复成"退出即走、3 秒重启"的老行为）。
+
+**验证**：点"退出"看窗口消失，`sudo journalctl -u wood-defect-detector -n 20` 会看到
+`[Exit] 界面已隐藏, 300 秒后再由 systemd 自动拉起`；再 `systemctl start` 一下就能提前叫回来。
+
 ### 界面"关机 / 重启电脑"按钮没反应
 
 **现象**：确认框点"关机"后机器不关，界面无任何提示。**只在 systemd 托管后出现**。

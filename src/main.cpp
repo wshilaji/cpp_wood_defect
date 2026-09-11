@@ -33,6 +33,10 @@
 
 static std::atomic<bool> running{true};
 
+// 收到 SIGINT/SIGTERM 置位。退出后的冷却等待(见 EXIT_RESTART_DELAY_SEC)靠它打断,
+// 否则 systemctl stop/restart 要干等到冷却结束, 长到会被 systemd 判超时 SIGKILL。
+static std::atomic<bool> g_sigStop{false};
+
 // ============================================================
 // 全局指针 + 崩溃清理
 // ============================================================
@@ -67,6 +71,7 @@ static void on_signal(int sig) {
     if (sig == SIGINT || sig == SIGTERM) {
         LOGE << "[CrashGuard] " << name << " 收到，正在退出...";
         running = false;
+        g_sigStop = true;   // 打断退出后的冷却等待
         cleanup_all();
         return;
     }
@@ -348,13 +353,22 @@ int main(int argc, char** argv) {
 
         }
 
+        // 先藏窗口收尾: 退出是为了腾桌面(开 RustDesk / 远程协助 / 改网络), 藏窗口要
+        // 立刻, 不能等 saver.stop() 把排队存图写完(可能好几秒), 那几秒全屏置顶还盖着。
+        win.hide();
+        app.processEvents();
+
         plc.stop();
         cam.stop();
         saver.stop();   // 等后台把排队中的存图写完再退出
+        // 下面 5 分钟冷却期间还可能收到信号, cleanup_all() 会经 g_plc/g_cam 去停设备。
+        // plc 随本 try 作用域析构, 之后信号再进来就是解引用已析构对象 → 必须清空指针。
+        // (cam 在外层作用域不会析构, 但句柄已关, 一并清掉省得误判为"还在跑")
+        g_plc = nullptr;
+        g_cam = nullptr;
         auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         LOGI << "停止 | 运行:" << (int)dt << "s | 检测:" << total
              << " | NG:" << ng_total;
-        return 0;
 
     } catch (const std::exception& e) {
         LOGE << "异常: " << e.what();
@@ -367,4 +381,35 @@ int main(int argc, char** argv) {
         cam.stop();
         return -6;
     }
+
+    // ============================================================
+    // 界面「退出」后的冷却等待
+    // ============================================================
+    // 走到这里说明是界面点「退出」的正常退出(异常/崩溃在上面已 return, 不走这段)。
+    // 设备已全停: PlcLink(线程 join)/SaveWorker(线程 join)/推理引擎 随 try 作用域析构,
+    // 引擎显存随之释放; 相机 stop() 里 closeDevice() 已 DestroyHandle 释放句柄。
+    // 所以进程现在只剩 Qt 窗口对象在空转, 不占相机、不占 GPU、不占后台线程。
+    //
+    // 为什么不能直接 return: systemd 是 Restart=always, 进程一结束就按 RestartSec(3s)
+    // 把界面拉回来。而要开 RustDesk 让远程协助连进来、或改网络设置, 几秒钟根本不够,
+    // 全屏置顶窗口一回来桌面又被盖住。所以这里不结束进程, 原地等 EXIT_RESTART_DELAY_SEC:
+    // systemd Type=simple 只看主进程死没死, 进程活着就不会重启 → 这段时间界面不会回来。
+    // 等够了进程正常退出, systemd 才按 RestartSec=3 拉起, 总延时≈配置值。
+    // 崩溃路径不受影响: 段错误/OOM 直接死, 产线恢复仍是 3 秒。
+    LOGI << "[Exit] 界面已隐藏, " << Config::EXIT_RESTART_DELAY_SEC
+         << " 秒后再由 systemd 自动拉起"
+         << " (想提前恢复: sudo systemctl restart wood-defect-detector)";
+
+    // 逐秒等而不是一次 sleep 300s: 收到 SIGTERM 要能立刻走, 否则 `systemctl stop/restart`
+    // 会卡到 systemd 的 TimeoutStopSec(默认 90s) 超时被 SIGKILL, 白等一场。
+    for (int left = Config::EXIT_RESTART_DELAY_SEC; left > 0; --left) {
+        if (g_sigStop) {
+            LOGI << "[Exit] 收到停止信号, 结束等待立即退出";
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
+    LOGI << "[Exit] 等待结束, 进程退出";
+    return 0;
 }

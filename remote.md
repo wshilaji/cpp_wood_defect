@@ -39,3 +39,19 @@ mac 新版客户端有bug。 直接安装之后，每次电脑重启会要重新
 好像是因为新版本之后的不在守护进程里。是用户级程序。每次扫盘会认为是新设备。
 讨论区帖子里面https://github.com/tailscale/tailscale/issues/17645 也有说这个问题。 改成旧版本就可以
 https://pkgs.tailscale.com/stable/?v=1.88.4    旧版本连接
+
+
+# RustDesk（远程桌面，替代向日葵；向日葵没出 aarch64 版装不上）
+release 下载页，选 aarch64 的 deb：https://github.com/rustdesk/rustdesk/releases
+
+# 1. 安装（<版本号> 换成实际下到的版本）
+sudo apt install -fy ./rustdesk-<版本号>-aarch64.deb
+
+# 2. 开机自启
+sudo systemctl enable rustdesk
+sudo systemctl start rustdesk
+
+# 3. 设置固定连接密码（被控端 nano 用，连接时输这个码）
+sudo rustdesk --password 625310
+
+# 注：密码是明文写在这文件里的，别把仓库推到公开的地方
