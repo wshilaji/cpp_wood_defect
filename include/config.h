@@ -24,6 +24,18 @@ constexpr const char* ENGINE_PATH    = "models/best.engine";
 constexpr float       CONF_THRESHOLD = 0.5f;
 
 // ---- 类别（与模型输出 class_id 对应，0起始） ----
+// 现场叫法(界面/工人口头用的)与下面拼音类名的对应, 代码里只有拼音, 记这里免得回头认不出:
+//   jieba   活节   —— 木节发白、按不掉, 不影响使用
+//   dongba  死节   —— 节扣没掉, 但使劲一按就掉
+//   heiba   小油疤 —— 黑色油滴在板面, 板子不碎; 单个没事, 数量多了才扔
+//   dongban 漏洞   —— 节扣掉了板子被穿透, 底下黑传送带透出来; **大油疤也标成这一类**
+//   quebian 缺边
+// 其余(shupi/shuwen/piwenba/baowen/liefeng/suibian/heiban/banwen/banwenba)
+// 目前只在图上画框显示, 不参与 NG 判定 —— 判定逻辑见 postprocessor.cpp 的 isNG()。
+// 注意 34-35 行的 SCRATCH_NG_LEN / SCRATCH_ASPECT 是给纹类(shuwen/piwenba/baowen)准备的,
+// 常量定义了但 isNG() 里从来没实现, 现在全代码无引用。
+//
+// ⚠ 顺序不能动: 这里的下标就是模型的 class_id, 改顺序等于把模型输出对错类。
 const std::vector<std::string> CLASSES = {
     "dongba", "dongban", "jieba", "shupi", "shuwen",
     "heiba", "piwenba", "quebian", "baowen", "liefeng",
@@ -36,7 +48,8 @@ constexpr float SCRATCH_ASPECT  = 5.0f;     // 纹类缺陷长宽比阈值
 
 // ---- 聚合判定（数量 / 面积占比）----
 constexpr int   JIEBA_MAX_COUNT  = 8;        // jieba 节疤:数量 > 此值判 NG
-constexpr int   DONGBA_MAX_COUNT = 8;        // dongba 洞疤:数量 > 此值判 NG
+constexpr int   DONGBA_MAX_COUNT = 8;        // dongba 死节:数量 > 此值判 NG
+constexpr int   HEIBA_MAX_COUNT  = 30;       // heiba 小油疤:数量 > 此值判 NG
 constexpr float DONGBAN_AREA_RATIO = 0.01f;  // dongban 洞板:面积和占整图比例 > 1% 判 NG
 constexpr float QUEBIAN_AREA_RATIO = 0.01f;  // quebian 缺边:面积和占整图比例 > 1% 判 NG
 constexpr int   JIEBA_DONGBA_MAX_COUNT = 12;      // jieba+dongba 数量之和 > 此值判 NG

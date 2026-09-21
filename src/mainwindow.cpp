@@ -268,13 +268,23 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 工人设置
     auto* grpSet = new QGroupBox(QString::fromUtf8("工人设置"), panel);
     auto* lSet   = new QVBoxLayout(grpSet);
-    // 结疤/洞疤 NG 数量、洞坑/缺边面积 —— 各横排一行，省面板空间
-    addSpinRowPair(QString::fromUtf8("结疤NG"), 0, 50, 8, "", &_jiebaSpin,
-                   QString::fromUtf8("洞疤NG"), 0, 50, 8, "", &_dongbaSpin, lSet);
-    addSpinRowPairD(QString::fromUtf8("洞坑面积"), 0, 100, 1.0, " %", &_dongbanAreaSpin,
+    // 活节/死节/小油疤 数量阈值 —— 竖排成一列
+    // (并排放不下三个: 面板固定 360px, 每个「6字标签+输入框」约 150px, 三个要 466px)
+    // 活节 = 节扣发白、按不掉, 不影响使用; 死节 = 节扣没掉但一按就掉
+    _jiebaSpin  = addSpinRow(QString::fromUtf8("活节数量大于"), 0, 50, 8, lSet);
+    _dongbaSpin = addSpinRow(QString::fromUtf8("死节数量大于"), 0, 50, 8, lSet);
+    // 小油疤(黑色油滴到板上, 板子不碎) 数量阈值 —— 数量 > 此值判 NG
+    _heibaSpin = addSpinRow(QString::fromUtf8("小油疤数量大于"), 0, 500, 30, lSet);
+    // 漏洞/缺边面积 —— 横排一行，省面板空间
+    addSpinRowPairD(QString::fromUtf8("漏洞面积"), 0, 100, 1.0, " %", &_dongbanAreaSpin,
                     QString::fromUtf8("缺边面积"), 0, 100, 1.0, " %", &_quebianAreaSpin, lSet);
-    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("结疤+洞疤数量"), 0, 100, 12, lSet);
-    _dongbanQuebianSpin = addSpinRowD(QString::fromUtf8("洞坑+缺边面积"), 0, 100, 2.0, " %", lSet);
+    // 标注备注 —— 大油疤在 labelme 里也标成 dongban, 所以跟着漏洞这条面积规则一起判
+    auto* holeHint = new QLabel(QString::fromUtf8("（大油疤归到漏洞里面）"), grpSet);
+    holeHint->setWordWrap(true);
+    holeHint->setStyleSheet("color:#909090; font-size:12px;");
+    lSet->addWidget(holeHint);
+    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("活节+死节数量"), 0, 100, 12, lSet);
+    _dongbanQuebianSpin = addSpinRowD(QString::fromUtf8("漏洞+缺边面积"), 0, 100, 2.0, " %", lSet);
     // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG（默认整板一半 600/300）
     addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 600, " mm", &_lenSpin,
                    QString::fromUtf8("板宽小于"), 0, 2000, 300, " mm", &_widSpin, lSet);
@@ -299,13 +309,22 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* grpCam = new QGroupBox(QString::fromUtf8("相机调参"), panel);
     auto* lCam   = new QVBoxLayout(grpCam);
     _expoSpin = addSpinRow(QString::fromUtf8("曝光 (us)"), 0, 100000, 7000, lCam);
-    _gainSpin = addSpinRow(QString::fromUtf8("增益 (dB)"), 0, 30, 0, lCam);
+    // 上限 24dB 是 MV-CS050-60GC 的标称增益范围(0~24dB, V5 高满阱模式只有 12.8)。
+    // 原先写死的 30 没有任何出处, 提示里那句 0-300 更离谱, 一起对齐到这里。
+    _gainSpin = addSpinRow(QString::fromUtf8("增益 (dB)"), 0, 24, 0, lCam);
+    // 增益提示单独占一行: 面板固定 360px, 这么长的说明塞进标签会被挤没
+    auto* gainHint = new QLabel(
+        QString::fromUtf8("（0-24，0 是默认；除非太暗，否则不要动默认 0）"), grpCam);
+    gainHint->setWordWrap(true);
+    gainHint->setStyleSheet("color:#909090; font-size:12px;");
+    lCam->addWidget(gainHint);
     v->addWidget(grpCam);
 
     // ---- 设置持久化: 存到当前目录 config.ini（可见文件，重启后保留） ----
     QSettings s(QStringLiteral("config.ini"), QSettings::IniFormat);
     _jiebaSpin->setValue(s.value("jieba_max", 8).toInt());
     _dongbaSpin->setValue(s.value("dongba_max", 8).toInt());
+    _heibaSpin->setValue(s.value("heiba_max", 30).toInt());
     _dongbanAreaSpin->setValue(s.value("dongban_area_pct", 1).toDouble());
     _quebianAreaSpin->setValue(s.value("quebian_area_pct", 1).toDouble());
     _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 12).toInt());
@@ -318,6 +337,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_max", v); });
     connect(_dongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongba_max", v); });
+    connect(_heibaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_max", v); });
     connect(_dongbanAreaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_area_pct", v); });
     connect(_quebianAreaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
@@ -487,6 +508,7 @@ void MainWindow::setSaveBlocked(bool blocked) {
 // ============================================================
 int MainWindow::jiebaMaxCount() const          { return _jiebaSpin->value(); }
 int MainWindow::dongbaMaxCount() const         { return _dongbaSpin->value(); }
+int MainWindow::heibaMaxCount() const          { return _heibaSpin->value(); }
 double MainWindow::dongbanAreaPct() const         { return _dongbanAreaSpin->value(); }
 double MainWindow::quebianAreaPct() const         { return _quebianAreaSpin->value(); }
 int MainWindow::jiebaDongbaMaxCount() const    { return _jiebaDongbaSpin->value(); }

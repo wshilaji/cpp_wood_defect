@@ -41,6 +41,7 @@ public:
     // ---- 工人设置（主循环轮询读取） ----
     int jiebaMaxCount() const;
     int dongbaMaxCount() const;
+    int heibaMaxCount() const;
     double dongbanAreaPct() const;
     double quebianAreaPct() const;
     int jiebaDongbaMaxCount() const;
@@ -83,6 +84,7 @@ private:
     QLabel*   _statTemp      = nullptr;
     QSpinBox* _jiebaSpin        = nullptr;
     QSpinBox* _dongbaSpin       = nullptr;
+    QSpinBox* _heibaSpin        = nullptr;
     QDoubleSpinBox* _dongbanAreaSpin  = nullptr;
     QDoubleSpinBox* _quebianAreaSpin  = nullptr;
     QSpinBox* _jiebaDongbaSpin  = nullptr;

@@ -57,10 +57,33 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
     return defects;
 }
 
+// ============================================================
+// NG 判定 —— 全流程唯一决定 OK/NG 的地方
+//
+// 两大类缺陷, 判据口径不一样, 不能混:
+//   【数量类】jieba(活节) / dongba(死节) / heiba(小油疤)
+//       都是小缺陷, 单个面积小, 按面积算永远抓不住 —— 数个数。
+//       典型: 小油疤单个直径才几毫米, 但一块板上撒几十个就该扔了。
+//       注: 30 个小油疤的面积和 > 1 个大油疤, 但两者结论相反(小的过、大的扔),
+//           所以这类必须按数量判; 想用面积规则表达它俩是做不到的。
+//   【面积类】dongban(漏洞) / quebian(缺边)
+//       大面积缺陷, 按各自框面积之和占整图比例判。
+//       注: 这里用的是检测框 w*h, 不是真实缺陷像素面积 —— 圆形框比实际大约 1.27 倍。
+//
+// 另有两条组合规则: 单类都没超、但两类加起来超了也要拦。
+//
+// 其余类(shupi/shuwen/piwenba/baowen/liefeng/suibian/heiban/banwen/banwenba)
+// 一律默认 OK, 只在左上角面板画框显示。要接入就: 这里加分支 + postprocessor.h 加阈值成员
+// + 界面加输入框 + main.cpp 下发, 四处都要动。
+// (背景: 模型 mAP50≈0.49 偏低, 未经现场验证的类直接参与判定会大量误杀。)
+//
+// 阈值全部运行时可调, 由界面「工人设置」输入框经 main.cpp 每板下发(见 postprocessor.h)。
+// ============================================================
 bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& size,
                          float len_mm, float wid_mm, std::string& reason) const {
     int   jieba_cnt   = 0;
     int   dongba_cnt  = 0;
+    int   heiba_cnt   = 0;
     float dongban_sum = 0.0f;
     float quebian_sum = 0.0f;
     float total_area  = (float)(size.width * size.height);
@@ -71,28 +94,33 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
             jieba_cnt++;
         } else if (d.name == "dongba") {
             dongba_cnt++;
+        } else if (d.name == "heiba") {
+            heiba_cnt++;
         } else if (d.name == "dongban") {
             dongban_sum += area;
         } else if (d.name == "quebian") {
             quebian_sum += area;
         }
-        // 其它类默认 OK，不判 NG
+        // 其余类(shupi/shuwen/piwenba/baowen/liefeng/suibian/heiban/banwen/banwenba)
+        // 默认 OK，不判 NG，只在左上角面板画框显示
     }
 
     std::vector<std::string> reasons;
     if (jieba_cnt > _jieba_max_count)
-        reasons.push_back("结疤>" + std::to_string(_jieba_max_count));
+        reasons.push_back("活节>" + std::to_string(_jieba_max_count));
     if (dongba_cnt > _dongba_max_count)
-        reasons.push_back("洞疤>" + std::to_string(_dongba_max_count));
+        reasons.push_back("死节>" + std::to_string(_dongba_max_count));
+    if (heiba_cnt > _heiba_max_count)
+        reasons.push_back("小油疤>" + std::to_string(_heiba_max_count));
     if (dongban_sum / total_area > _dongban_area_ratio)
-        reasons.push_back("洞坑>" + pctStr(_dongban_area_ratio) + "%");
+        reasons.push_back("漏洞>" + pctStr(_dongban_area_ratio) + "%");
     if (quebian_sum / total_area > _quebian_area_ratio)
         reasons.push_back("缺边>" + pctStr(_quebian_area_ratio) + "%");
     // 组合判定：jieba+dongba 数量之和、dongban+quebian 面积之和
     if (jieba_cnt + dongba_cnt > _jieba_dongba_max_count)
-        reasons.push_back("结疤+洞疤>" + std::to_string(_jieba_dongba_max_count));
+        reasons.push_back("活节+死节>" + std::to_string(_jieba_dongba_max_count));
     if ((dongban_sum + quebian_sum) / total_area > _dongban_quebian_area_ratio)
-        reasons.push_back("洞坑+缺边>" + pctStr(_dongban_quebian_area_ratio) + "%");
+        reasons.push_back("漏洞+缺边>" + pctStr(_dongban_quebian_area_ratio) + "%");
 
     // 木板尺寸判定：测得长/宽低于阈值判 NG（0=没测到，不判尺寸）
     if (len_mm > 0 && len_mm < _min_length_mm)

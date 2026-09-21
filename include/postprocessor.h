@@ -38,6 +38,10 @@ public:
     void setDongbaMaxCount(int n) { _dongba_max_count = n; }
     int  dongbaMaxCount() const   { return _dongba_max_count; }
 
+    /** 工人可调：heiba(小油疤) 数量超过此值判 NG */
+    void setHeibaMaxCount(int n) { _heiba_max_count = n; }
+    int  heibaMaxCount() const   { return _heiba_max_count; }
+
     /** 工人可调：dongban 面积和占整图比例超过此值判 NG */
     void  setDongbanAreaRatio(float r) { _dongban_area_ratio = r; }
     float dongbanAreaRatio() const     { return _dongban_area_ratio; }
@@ -67,6 +71,7 @@ private:
     std::vector<std::string> _classes;
     int   _jieba_max_count            = Config::JIEBA_MAX_COUNT;            // 运行时阈值，默认 8
     int   _dongba_max_count           = Config::DONGBA_MAX_COUNT;           // 默认 8
+    int   _heiba_max_count            = Config::HEIBA_MAX_COUNT;            // 默认 30
     float _dongban_area_ratio         = Config::DONGBAN_AREA_RATIO;         // 默认 1%
     float _quebian_area_ratio         = Config::QUEBIAN_AREA_RATIO;         // 默认 1%
     int   _jieba_dongba_max_count     = Config::JIEBA_DONGBA_MAX_COUNT;     // 默认 12

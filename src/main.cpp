@@ -313,6 +313,7 @@ int main(int argc, char** argv) {
             // NG 判定：用界面输入的工人阈值（jieba/dongba 数量、dongban/quebian 面积、组合判定）
             post.setJiebaMaxCount(win.jiebaMaxCount());
             post.setDongbaMaxCount(win.dongbaMaxCount());
+            post.setHeibaMaxCount(win.heibaMaxCount());
             post.setDongbanAreaRatio(win.dongbanAreaPct() / 100.0f);
             post.setQuebianAreaRatio(win.quebianAreaPct() / 100.0f);
             post.setJiebaDongbaMaxCount(win.jiebaDongbaMaxCount());
