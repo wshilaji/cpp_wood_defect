@@ -361,7 +361,7 @@ int main(int argc, char** argv) {
         plc.stop();
         cam.stop();
         saver.stop();   // 等后台把排队中的存图写完再退出
-        // 下面 5 分钟冷却期间还可能收到信号, cleanup_all() 会经 g_plc/g_cam 去停设备。
+        // 下面冷却等待期间还可能收到信号, cleanup_all() 会经 g_plc/g_cam 去停设备。
         // plc 随本 try 作用域析构, 之后信号再进来就是解引用已析构对象 → 必须清空指针。
         // (cam 在外层作用域不会析构, 但句柄已关, 一并清掉省得误判为"还在跑")
         g_plc = nullptr;
@@ -400,7 +400,7 @@ int main(int argc, char** argv) {
          << " 秒后再由 systemd 自动拉起"
          << " (想提前恢复: sudo systemctl restart wood-defect-detector)";
 
-    // 逐秒等而不是一次 sleep 300s: 收到 SIGTERM 要能立刻走, 否则 `systemctl stop/restart`
+    // 逐秒等而不是一次 sleep 到底: 收到 SIGTERM 要能立刻走, 否则 `systemctl stop/restart`
     // 会卡到 systemd 的 TimeoutStopSec(默认 90s) 超时被 SIGKILL, 白等一场。
     for (int left = Config::EXIT_RESTART_DELAY_SEC; left > 0; --left) {
         if (g_sigStop) {
