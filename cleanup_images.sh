@@ -49,6 +49,13 @@ if ! [[ "$CAP_GB" =~ ^[0-9]+$ ]] || ! [[ "$KEEP_GB" =~ ^[0-9]+$ ]]; then
     echo "CLEANUP_CAP_GB / CLEANUP_KEEP_GB 必须是整数 GB" >&2
     exit 2
 fi
+# 水位必须低于上限。反了的话 NEED 是负数，下面第一次比较就 break，一个文件都不删，
+# 最后还打一句"可能是文件太新或删除失败"——把「配置写反」伪装成「文件删不掉」。
+# 测试时最容易踩：只想把上限压到 1G 验证，忘了水位还是默认的 54。
+if [ "$KEEP_GB" -ge "$CAP_GB" ]; then
+    echo "CLEANUP_KEEP_GB(${KEEP_GB}G) 必须小于 CLEANUP_CAP_GB(${CAP_GB}G)" >&2
+    exit 2
+fi
 
 CAP=$(( CAP_GB * 1024 * 1024 * 1024 ))
 KEEP=$(( KEEP_GB * 1024 * 1024 * 1024 ))
@@ -151,7 +158,10 @@ while IFS='|' read -r key newest gsize path; do
             continue
         fi
         skip=0
-        freed=$(( freed + gsize ))          # 组开始就记账：本组整个都会被删掉
+        # 组开始就记账：本组整个都会被删掉。注意这是【乐观】计数 —— rm 失败的那几个
+        # 也算进来了，所以下面 AFTER 偏小、可能不打那条"清不掉"的告警。没关系：
+        # 失败一定会在 nfail 那两条日志里留痕，那才是查问题的入口。
+        freed=$(( freed + gsize ))
     fi
     [ "$skip" = 1 ] && continue
     if rm -f -- "$path" 2>/dev/null; then
