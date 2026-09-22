@@ -344,8 +344,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _saveChk->setStyleSheet(
         QString::fromUtf8("QCheckBox{color:#e0e0e0;} QCheckBox::indicator{width:18px;height:18px;}"));
     lSet->addWidget(_saveChk);
-    // 存图保护提示：累计超 1GB 停存后显示
-    _saveBlocked = new QLabel(QString::fromUtf8("⚠ 存图已停：累计超 1GB"), grpSet);
+    // 存图保护提示：磁盘不足 / 目录超 60G 停存后显示，文案带具体原因（setSaveBlocked 填）
+    _saveBlocked = new QLabel(QString::fromUtf8("⚠ 存图已暂停"), grpSet);
     _saveBlocked->setStyleSheet(QString::fromUtf8("color:#ff8080; font-size:14px;"));
     _saveBlocked->setVisible(false);
     lSet->addWidget(_saveBlocked);
@@ -568,8 +568,15 @@ void MainWindow::renderCamLed() {
     _ledCam->setStyleSheet(QString("color:%1; font-size:16px;").arg(color));
 }
 void MainWindow::setEngineReady(bool on)  { setLed(_ledEngine, on); }
-void MainWindow::setSaveBlocked(bool blocked) {
-    if (_saveBlocked) _saveBlocked->setVisible(blocked);
+void MainWindow::setSaveBlocked(bool blocked, const QString& why) {
+    if (!_saveBlocked) return;
+    if (blocked) {
+        // 原因写进提示里：现场看到「存图已暂停」得知道是盘满了还是目录到 60G 了，
+        // 前者要清别的目录、后者等清理脚本或调大上限，处置方式不一样
+        _saveBlocked->setText(why.isEmpty() ? QString::fromUtf8("⚠ 存图已暂停")
+                                            : QString::fromUtf8("⚠ 存图已暂停：") + why);
+    }
+    _saveBlocked->setVisible(blocked);
 }
 
 // ============================================================

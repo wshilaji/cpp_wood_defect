@@ -71,6 +71,14 @@ for i in $(seq 1 90); do
     sleep 1
 done
 
+# ---- 启动前先清一次存图(双保险里的脚本那层) ----
+# 放 exec 之前且同步跑完: 程序内部那层是"目录 ≥ 60G 就停写", 上次关机时目录本来就满的话,
+# 不先删, 程序一起来就进停写状态, 得等 timer 跑完才恢复。清理脚本自己有 mkdir 锁防并发,
+# 这里 || true 是兜底 —— run.sh 有 set -e, 清理出岔子不该拦着主程序启动。
+if [ -x "$DIR/cleanup_images.sh" ]; then
+    "$DIR/cleanup_images.sh" --quiet || true
+fi
+
 exec ./wood_defect_detector "$@"
 EOF
 chmod +x "$APP_DIR/run.sh"
@@ -114,11 +122,49 @@ PKLAEOF
 # localauthority 会自动感知文件变化; 主动重启一次确保立即生效
 sudo systemctl restart polkit >/dev/null 2>&1 || true
 
-# ---- 6. 502 端口权限(非 root 绑 <1024) ----
+# ---- 6.5 存图清理定时器(双保险里的脚本那层) ----
+# 程序 Restart=always 一跑几周, 期间只有 C++ 那层"超 60G 停写", 没人删旧的。
+# 有 timer 才能在不重启的情况下把空间腾出来, 程序下一轮复查(30 秒)自动恢复存图。
+if [ -x "$APP_DIR/cleanup_images.sh" ]; then
+    sudo tee /etc/systemd/system/wood-defect-cleanup.service > /dev/null <<CLEANUPEOF
+[Unit]
+Description=Wood Defect Detector 存图清理（raw+result 超 60G 时从最老的删到 54G）
+
+[Service]
+Type=oneshot
+User=$RUNAS
+Group=$RUNAS
+WorkingDirectory=$APP_DIR
+# 清理是后台杂活, 别跟检测抢 CPU/IO(相机那条链路对延迟敏感)
+Nice=10
+IOSchedulingClass=idle
+ExecStart=$APP_DIR/cleanup_images.sh --quiet
+CLEANUPEOF
+
+    sudo tee /etc/systemd/system/wood-defect-cleanup.timer > /dev/null <<TIMEREOF
+[Unit]
+Description=每小时检查一次存图目录容量
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target
+TIMEREOF
+
+    sudo systemctl enable --now wood-defect-cleanup.timer \
+        || echo "警告: 清理定时器启用失败, 存图只剩 C++ 那层(超 60G 停写)" >&2
+else
+    echo "提示: $APP_DIR 里没有 cleanup_images.sh（重新打包时会带上），" >&2
+    echo "      存图清理只剩 C++ 那层（超 60G 停写），不会自动删旧的。" >&2
+fi
+
+# ---- 7. 502 端口权限(非 root 绑 <1024) ----
 sudo setcap cap_net_bind_service=+ep "$APP_DIR/$APP" 2>/dev/null \
     || echo "警告: setcap 失败, 502 端口可能绑不上" >&2
 
-# ---- 7. 重载并重启 ----
+# ---- 8. 重载并重启 ----
 sudo systemctl daemon-reload
 sudo systemctl enable "$SVC"
 sudo systemctl restart "$SVC"

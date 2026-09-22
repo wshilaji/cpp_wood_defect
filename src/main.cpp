@@ -360,24 +360,19 @@ int main(int argc, char** argv) {
 
             pt.tick("拍照");
 
-            // 存图总开关：界面「开发者模式」需密码开启（默认关，防硬盘写满）；
-            // 开启后 原始图 / 结果图 各按自己的比例独立抽样（每 100/pct 张存 1 张）
-            bool save_raw = false, save_res = false;
-            if (win.saveEnabled()) {
-                int rpct = win.rawSaveRatioPct();
-                static uint64_t raw_shot = 0;
-                if (rpct > 0 && (++raw_shot % (100 / rpct)) == 0) save_raw = true;
+            // OK 板的抽样比例（只有开发者模式才看这个）。NG 板一律全存，不吃这个开关，
+            // 见下面判完 NG 之后的推送处。
+            const int ok_raw_pct = win.saveEnabled() ? win.rawSaveRatioPct()    : 0;
+            const int ok_res_pct = win.saveEnabled() ? win.resultSaveRatioPct() : 0;
 
-                int spct = win.resultSaveRatioPct();
-                static uint64_t res_shot = 0;
-                if (spct > 0 && (++res_shot % (100 / spct)) == 0) save_res = true;
-            }
-
-            // 原始图丢给后台线程存（深拷贝；队列满/已停存则自动丢弃）
-            if (save_raw && Config::SAVE_IMAGES) saver.push(frame, false, true, board_id);
-
-            // CLAHE 增强（默认关闭，开启时在此对 frame 做增强）
-            cv::Mat img = frame;
+            // 必须 clone：原始图要"没画过框"的干净帧，而结果图得等判完 NG 才存。
+            // 原先开发者模式是抢在画框【之前】推原始图的（老代码那行在 cv::Mat img = frame
+            // 之前），当时"存不存"只看比例、跟 NG 无关，所以抢得到；现在"存不存"取决于
+            // is_ng，而 is_ng 在画框之后才有 —— 提前推这条路堵死了，只能先把干净帧复制出来。
+            // cv::Mat img = frame 是浅拷贝（共享像素缓冲），画框会连 frame 一起画花，所以不能省。
+            // 代价：2448×2048×3 ≈ 15MB/板；循环退出即释放，峰值只多一帧，相对 8G 可忽略。
+            // CLAHE 增强（默认关闭，开启时在此对 img 做增强）
+            cv::Mat img = frame.clone();
 
             pt.tick("增强");
 
@@ -425,9 +420,25 @@ int main(int argc, char** argv) {
 
             pt.dump();
 
-            // 结果图（OK/NG 统一）丢给后台线程存（超 1GB 保护闸在 worker 内）
-            if (save_res && Config::SAVE_IMAGES) saver.push(img, is_ng, false, board_id);
-            win.setSaveBlocked(saver.blocked());   // 超限时界面提示「存图已停」
+            // ---- 存图 ----
+            //   NG 板 → 原始图(frame，干净) + 结果图(img，带框)，【无条件全存】，
+            //           不吃开发者模式开关 —— 留档不该依赖谁记得去开那个开关。
+            //   OK 板 → 默认不存；开发者模式开着时按各自比例抽样（查漏检用）。
+            // 写不写由 worker 说了算（磁盘空间/目录总量两道闸），它拒收就丢弃，主线程不等。
+            if (Config::SAVE_IMAGES) {
+                if (is_ng) {
+                    saver.push(frame, true, true,  board_id);   // 原始图
+                    saver.push(img,   true, false, board_id);   // 结果图
+                } else {
+                    static uint64_t ok_raw_shot = 0, ok_res_shot = 0;
+                    if (ok_raw_pct > 0 && (++ok_raw_shot % (100 / ok_raw_pct)) == 0)
+                        saver.push(frame, false, true,  board_id);
+                    if (ok_res_pct > 0 && (++ok_res_shot % (100 / ok_res_pct)) == 0)
+                        saver.push(img,   false, false, board_id);
+                }
+            }
+            // 停写提示带上原因（磁盘不足 / 目录超 60G），现场看提示就知道该清哪儿
+            win.setSaveBlocked(saver.blocked(), QString::fromUtf8(saver.blockedReason()));
 
             // ---- 刷新界面 ----
             win.setImage(img);

@@ -40,8 +40,10 @@ public:
     void setCamFault(bool on);     // 红=故障（连续空帧判故障），优先级最高，恢复后清除
     void setEngineReady(bool on);
 
-    // ---- 存图保护：累计超 1GB 停存后界面提示 ----
-    void setSaveBlocked(bool blocked);
+    // ---- 存图保护：磁盘不足 / 目录超 60G 停存后界面提示 ----
+    // why 由 SaveWorker::blockedReason() 给（"磁盘空间不足" / "存图目录超 60G"），
+    // 空串时用一句兜底文案，不让提示框看起来像坏了
+    void setSaveBlocked(bool blocked, const QString& why = QString());
 
     // ---- 工人设置（主循环轮询读取） ----
     int jiebaMaxCount() const;
