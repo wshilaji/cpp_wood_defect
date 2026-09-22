@@ -13,7 +13,9 @@ class QCheckBox;
 /**
  * 木板瑕疵检测 — Qt 操作界面
  *
- * 由检测主循环驱动刷新：setImage/setResult/setStats/setGpuTemp/setMeasure/setCycleMs。
+ * 由检测主循环驱动刷新：
+ *   setImage/setResult/setStats/setMeasure/setCycleMs
+ *   setGpuTemp/setCpuTemp/setMemoryPct/setDiskPct（系统状态，空闲时刷新）
  * 工人设置（jieba 数量 / 存图比例 / 曝光 / 增益）用 QSpinBox，主循环轮询读取后下发。
  * 手动拍照 / 退出 通过按钮置位标志，主循环轮询消费（takeManualTrigger/exitRequested）。
  */
@@ -25,7 +27,10 @@ public:
     void setImage(const cv::Mat& bgr);
     void setResult(bool ng, const QString& reason);
     void setStats(quint64 total, quint64 ng);
-    void setGpuTemp(double gpu_c);   // GPU 温度（英伟达），负值显示 --
+    void setGpuTemp(double gpu_c);    // GPU 温度（英伟达），负值显示 --
+    void setCpuTemp(double cpu_c);    // CPU 温度，负值显示 --（读不到传感器时为负）
+    void setMemoryPct(double pct);    // 内存占用率 %，负值显示 --
+    void setDiskPct(double pct);      // 存图所在盘占用率 %，负值显示 --
     void setMeasure(double long_mm, double short_mm);
     void setCycleMs(double ms);
 
@@ -81,7 +86,10 @@ private:
     QLabel*   _statRate      = nullptr;
     QLabel*   _statDims      = nullptr;
     QLabel*   _statCycle     = nullptr;
-    QLabel*   _statTemp      = nullptr;
+    QLabel*   _statGpuTemp   = nullptr;
+    QLabel*   _statCpuTemp   = nullptr;
+    QLabel*   _statMem       = nullptr;
+    QLabel*   _statDisk      = nullptr;
     QSpinBox* _jiebaSpin        = nullptr;
     QSpinBox* _dongbaSpin       = nullptr;
     QSpinBox* _heibaSpin        = nullptr;

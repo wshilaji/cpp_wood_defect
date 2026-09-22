@@ -11,7 +11,10 @@
  * 策略：
  *   - 队列满 → 丢弃本次存图（存图是抽样的，丢一张无所谓），主线程永不等待
  *   - 累计存图超 1GB → 停存（防硬盘写满），blocked() 供界面显示提示
- *   - 原始图存 output/raw/RAW_*.jpg（质量 80）；结果图存 output/result/OK_|NG_*.jpg（质量 70）
+ *   - 原始图存 output/raw/<id>_RAW.jpg（质量 80）；结果图存 output/result/<id>_NG|OK.jpg（质量 70）
+ *     <id> 由调用方一板生成一个、两张图共用（见 makeBoardId），所以同一块板的
+ *     原始图/结果图后缀完全一致，合并两个目录就能一一对应；ID 放最前面，
+ *     按名字排序时两张图天然相邻成对（旧格式 NG_/RAW_ 前缀不同，排序是两堆分开的）。
  */
 
 #include <thread>
@@ -44,8 +47,10 @@ public:
     ~SaveWorker() { stop(); }
 
     /** 主线程调用：把存图任务丢进队列，不阻塞。
-     *  已停存 / 队列满 / 空图 → 返回 false（丢弃）。img 会被深拷贝。 */
-    bool push(const cv::Mat& img, bool is_ng, bool raw) {
+     *  已停存 / 队列满 / 空图 → 返回 false（丢弃）。img 会被深拷贝。
+     *  @param id  本板存图 ID。同一块板的原始图和结果图必须传同一个，
+     *             否则两张图名字对不上，回溯时配不起来。 */
+    bool push(const cv::Mat& img, bool is_ng, bool raw, const std::string& id) {
         if (_blocked.load()) return false;
         if (img.empty()) return false;
 
@@ -54,9 +59,25 @@ public:
 
         std::lock_guard<std::mutex> lk(_mtx);
         if (_stop || _queue.size() >= _maxQueue) return false;
-        _queue.push({std::move(clone), is_ng, raw});
+        _queue.push({std::move(clone), is_ng, raw, id});
         _cv.notify_one();
         return true;
+    }
+
+    /** 生成一块板的存图 ID，形如 20260922_133031_314。
+     *  调用方在【拿到帧时】生成一次，本板的原始图和结果图都传它：
+     *    - 两张图后缀完全一致 → 一一对应是确定的，不靠时间戳接近去猜
+     *    - ID 反映的是拍照时刻而不是写盘时刻，队列积压时不会漂移
+     *  毫秒精度足够唯一：主循环一板 ~200ms，不可能撞上。 */
+    static std::string makeBoardId() {
+        auto now = std::chrono::system_clock::now();
+        auto t   = std::chrono::system_clock::to_time_t(now);
+        auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       now.time_since_epoch()) % 1000;
+        std::ostringstream ss;
+        ss << std::put_time(std::localtime(&t), "%Y%m%d_%H%M%S_")
+           << std::setfill('0') << std::setw(3) << ms.count();
+        return ss.str();
     }
 
     /** 超 1GB 停存状态（主线程每板轮询刷新界面提示） */
@@ -75,9 +96,10 @@ public:
 
 private:
     struct Job {
-        cv::Mat img;
-        bool    is_ng;
-        bool    raw;
+        cv::Mat     img;
+        bool        is_ng;
+        bool        raw;
+        std::string id;      // 本板存图 ID（原始图/结果图同一个）
     };
 
     static constexpr uint64_t SAVE_CAP_BYTES    = 1024ULL * 1024ULL * 1024ULL;  // 1GB
@@ -107,10 +129,10 @@ private:
             ? std::string(Config::OUTPUT_DIR) + "raw/"
             : std::string(Config::OUTPUT_DIR) + "result/";
 
+        // ID 放最前面: 合并 raw/ 与 result/ 后按名字排序，同一块板的两张图相邻。
         std::ostringstream ss;
-        if (job.raw)      ss << dir << "RAW_";
-        else              ss << dir << (job.is_ng ? "NG_" : "OK_");
-        ss << timestamp() << ".jpg";
+        ss << dir << job.id
+           << (job.raw ? "_RAW" : (job.is_ng ? "_NG" : "_OK")) << ".jpg";
 
         std::vector<int> jpg{cv::IMWRITE_JPEG_QUALITY,
                              job.raw ? RAW_JPG_QUALITY : RESULT_JPG_QUALITY};
@@ -128,17 +150,6 @@ private:
             _blocked = true;
             LOGE << "[SaveGuard] 累计存图超 1GB，停止存图（防硬盘写满）";
         }
-    }
-
-    static std::string timestamp() {
-        auto now = std::chrono::system_clock::now();
-        auto t   = std::chrono::system_clock::to_time_t(now);
-        auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       now.time_since_epoch()) % 1000;
-        std::ostringstream ss;
-        ss << std::put_time(std::localtime(&t), "%Y%m%d_%H%M%S_")
-           << std::setfill('0') << std::setw(3) << ms.count();
-        return ss.str();
     }
 
     size_t                  _maxQueue = 4;

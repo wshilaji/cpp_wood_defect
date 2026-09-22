@@ -15,6 +15,9 @@
 #include <exception>
 #include <iomanip>
 #include <fstream>
+#include <sstream>
+#include <string>
+#include <sys/statvfs.h>
 
 #include <QApplication>
 #include <QString>
@@ -96,24 +99,90 @@ struct FPS {
 };
 
 // ============================================================
-// GPU 温度（低优先级：只喂状态栏显示，不参与检测）
-// 只在主循环【空闲】分支刷新（refreshGpuTemp 仅在空闲处调用），
-// 触发拍照的检测路径零温度 I/O；一次读缓存 60s。
+// 系统状态：GPU/CPU 温度、内存占用、硬盘占用（低优先级：只喂状态栏显示，不参与检测）
+// 只在主循环【空闲】分支刷新（refreshSysStats 仅在空闲处调用），
+// 触发拍照的检测路径零 I/O（只读上一次的缓存值）；一次读缓存 60s。
 // ============================================================
 static float g_gpuTemp = -1;
+static float g_cpuTemp = -1;
+static float g_memPct  = -1;
+static float g_diskPct = -1;
 
-static void refreshGpuTemp() {
-    static auto last = std::chrono::steady_clock::time_point{};
-    auto now = std::chrono::steady_clock::now();
-    if (g_gpuTemp < 0 || std::chrono::duration<double>(now - last).count() > 60.0) {
-        std::ifstream f("/sys/devices/virtual/thermal/thermal_zone1/temp");
-        if (f.is_open()) {
-            int raw;
-            f >> raw;
-            g_gpuTemp = raw / 1000.0f;
-        }
-        last = now;
+// 按 thermal zone 的 type 找传感器路径，不写死编号：
+// thermal_zoneN 的编号跟板子型号/内核版本有关，写死 zone1 换台机器可能读到别的传感器。
+// 找不到返回空串，调用方显示 --。
+static std::string findThermalZone(const char* keyword) {
+    for (int i = 0; i < 16; ++i) {
+        std::string base = "/sys/class/thermal/thermal_zone" + std::to_string(i);
+        std::ifstream tf(base + "/type");
+        if (!tf.is_open()) continue;              // 编号不连续，跳过
+        std::string type;
+        std::getline(tf, type);
+        if (type.find(keyword) != std::string::npos) return base + "/temp";
     }
+    return std::string();
+}
+
+// 内核给的温度是毫摄氏度
+static float readTempC(const std::string& path) {
+    if (path.empty()) return -1;
+    std::ifstream f(path);
+    if (!f.is_open()) return -1;
+    int milli = 0;
+    f >> milli;
+    return milli / 1000.0f;
+}
+
+// 内存占用率 %。用 MemAvailable 而不是 MemFree：MemFree 不含可回收的磁盘缓存，
+// 会虚高（free 命令的 available 也是这个口径）。
+static float readMemUsedPct() {
+    std::ifstream f("/proc/meminfo");
+    if (!f.is_open()) return -1;
+    long long total = 0, avail = 0;
+    std::string line;
+    while (std::getline(f, line)) {
+        std::istringstream is(line);
+        std::string key;
+        long long kb = 0;
+        if (!(is >> key >> kb)) continue;
+        if      (key == "MemTotal:")     total = kb;
+        else if (key == "MemAvailable:") { avail = kb; break; }   // 排在 MemTotal 之后
+    }
+    if (total <= 0) return -1;
+    return 100.0f * (float)(total - avail) / (float)total;
+}
+
+// 硬盘占用率 %：量存图目录所在的那块盘（图都写这儿，它满了才是真问题）。
+// 口径跟 df 一致：已用 = (blocks - bfree) / blocks。
+static float readDiskUsedPct(const char* path) {
+    struct statvfs vfs;
+    if (statvfs(path, &vfs) != 0) return -1;
+    const unsigned long long total = (unsigned long long)vfs.f_blocks * vfs.f_frsize;
+    if (total == 0) return -1;
+    const unsigned long long used =
+        ((unsigned long long)vfs.f_blocks - (unsigned long long)vfs.f_bfree) * vfs.f_frsize;
+    return 100.0f * (float)used / (float)total;
+}
+
+static void refreshSysStats() {
+    static auto last   = std::chrono::steady_clock::time_point{};
+    static bool inited = false;
+    auto now = std::chrono::steady_clock::now();
+    // 用 inited 而不是拿 g_gpuTemp 判空：找不到传感器时 g_gpuTemp 恒为 -1，
+    // 那样每次空闲循环都会重读一遍 /proc/meminfo + statvfs。
+    if (inited && std::chrono::duration<double>(now - last).count() <= 60.0) return;
+
+    static std::string gpu_path, cpu_path;   // 只找一次；没找到下次再试
+    if (gpu_path.empty()) gpu_path = findThermalZone("GPU");
+    if (cpu_path.empty()) cpu_path = findThermalZone("CPU");
+
+    g_gpuTemp = readTempC(gpu_path);
+    g_cpuTemp = readTempC(cpu_path);
+    g_memPct  = readMemUsedPct();
+    g_diskPct = readDiskUsedPct(Config::OUTPUT_DIR);
+
+    inited = true;
+    last   = now;
 }
 
 // ============================================================
@@ -237,10 +306,13 @@ int main(int argc, char** argv) {
             auto src = plc.beginBoard(win.takeManualTrigger(), 50);
 
             if (src == BoardSource::None) {
-                // 空闲: 刷新 PLC 状态 / GPU 温度（温度只在空闲读，不占检测路径）
+                // 空闲: 刷新 PLC 状态 / 系统状态（温度·内存·硬盘只在空闲读，不占检测路径）
                 win.setPlcConnected(plc.isConnected());
-                refreshGpuTemp();
+                refreshSysStats();
                 win.setGpuTemp(g_gpuTemp);
+                win.setCpuTemp(g_cpuTemp);
+                win.setMemoryPct(g_memPct);
+                win.setDiskPct(g_diskPct);
                 continue;
             }
             if (src == BoardSource::Manual)
@@ -266,6 +338,11 @@ int main(int argc, char** argv) {
             }
             camGuard.onFrame();   // 拿到帧，健康
 
+            // 本板存图 ID：原始图（下面先推）和结果图（判完 NG 再推）共用这一个，
+            // 两张图命名成 <id>_RAW.jpg / <id>_NG|OK.jpg，后缀一致才能一一对应。
+            // 在这里生成（拿到帧时）而不是写盘时，ID 反映的才是拍照时刻。
+            const std::string board_id = SaveWorker::makeBoardId();
+
             pt.tick("拍照");
 
             // 存图总开关：界面「开发者模式」需密码开启（默认关，防硬盘写满）；
@@ -282,7 +359,7 @@ int main(int argc, char** argv) {
             }
 
             // 原始图丢给后台线程存（深拷贝；队列满/已停存则自动丢弃）
-            if (save_raw && Config::SAVE_IMAGES) saver.push(frame, false, true);
+            if (save_raw && Config::SAVE_IMAGES) saver.push(frame, false, true, board_id);
 
             // CLAHE 增强（默认关闭，开启时在此对 frame 做增强）
             cv::Mat img = frame;
@@ -334,14 +411,18 @@ int main(int argc, char** argv) {
             pt.dump();
 
             // 结果图（OK/NG 统一）丢给后台线程存（超 1GB 保护闸在 worker 内）
-            if (save_res && Config::SAVE_IMAGES) saver.push(img, is_ng, false);
+            if (save_res && Config::SAVE_IMAGES) saver.push(img, is_ng, false, board_id);
             win.setSaveBlocked(saver.blocked());   // 超限时界面提示「存图已停」
 
             // ---- 刷新界面 ----
             win.setImage(img);
             win.setResult(is_ng, QString::fromStdString(ng_reason));
             win.setStats(total, ng_total);
-            win.setGpuTemp(g_gpuTemp);   // 只显示空闲时刷新的缓存值，检测路径零温度 I/O
+            // 系统状态只显示空闲时刷新的缓存值，检测路径零 I/O
+            win.setGpuTemp(g_gpuTemp);
+            win.setCpuTemp(g_cpuTemp);
+            win.setMemoryPct(g_memPct);
+            win.setDiskPct(g_diskPct);
             if (measure.valid) win.setMeasure(measure.long_mm, measure.short_mm);
             win.setCycleMs(pt.elapsed());
 

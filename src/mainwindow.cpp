@@ -81,6 +81,36 @@ static QLabel* addStatRow(const QString& name, QVBoxLayout* lay) {
     return val;
 }
 
+// 一行横排两对「名称 + 值」：统计项变多（9 项）后一列排会顶出屏幕，
+// 工人就得拖滚动条。两列省下近一半高度。
+// 两个标签都用 stretch=1 平分剩余空间，各自的「值」就落在本列右边缘，两列自然对齐。
+static void addStatRowPair(const QString& n1, QLabel** v1,
+                           const QString& n2, QLabel** v2,
+                           QVBoxLayout* lay) {
+    auto* row = new QHBoxLayout;
+    row->setSpacing(14);
+
+    auto* l1 = new QLabel(n1);
+    l1->setStyleSheet("color:#c8c8c8;");
+    auto* x1 = new QLabel("--");
+    x1->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    x1->setStyleSheet("color:#ffffff; font-weight:bold; font-size:16px;");
+    row->addWidget(l1, 1);
+    row->addWidget(x1, 0);
+
+    auto* l2 = new QLabel(n2);
+    l2->setStyleSheet("color:#c8c8c8;");
+    auto* x2 = new QLabel("--");
+    x2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    x2->setStyleSheet("color:#ffffff; font-weight:bold; font-size:16px;");
+    row->addWidget(l2, 1);
+    row->addWidget(x2, 0);
+
+    lay->addLayout(row);
+    *v1 = x1;
+    if (v2) *v2 = x2;
+}
+
 static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxLayout* lay,
                             QWidget** outRow = nullptr) {
     auto* box = new QWidget;                 // 整行包成 QWidget，方便整行显隐
@@ -257,12 +287,17 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 统计
     auto* grpStt = new QGroupBox(QString::fromUtf8("统计"), panel);
     auto* lStt   = new QVBoxLayout(grpStt);
-    _statTotal = addStatRow(QString::fromUtf8("总检数"), lStt);
-    _statNg    = addStatRow(QString::fromUtf8("NG 数"), lStt);
-    _statRate  = addStatRow(QString::fromUtf8("合格率"), lStt);
-    _statDims  = addStatRow(QString::fromUtf8("木板尺寸"), lStt);
-    _statCycle = addStatRow(QString::fromUtf8("耗时"), lStt);
-    _statTemp  = addStatRow(QString::fromUtf8("温度"), lStt);
+    lStt->setSpacing(4);   // 两列排布后行数多，行距收一点
+    addStatRowPair(QString::fromUtf8("总检数"), &_statTotal,
+                   QString::fromUtf8("NG 数"),  &_statNg,    lStt);
+    addStatRowPair(QString::fromUtf8("合格率"), &_statRate,
+                   QString::fromUtf8("耗时"),   &_statCycle, lStt);
+    // 尺寸的值长（1200.0 × 600.0 mm），占一整行
+    _statDims = addStatRow(QString::fromUtf8("木板尺寸"), lStt);
+    addStatRowPair(QString::fromUtf8("GPU 温度"), &_statGpuTemp,
+                   QString::fromUtf8("CPU 温度"), &_statCpuTemp, lStt);
+    addStatRowPair(QString::fromUtf8("内存"), &_statMem,
+                   QString::fromUtf8("硬盘"), &_statDisk, lStt);
     v->addWidget(grpStt);
 
     // 工人设置
@@ -308,13 +343,15 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 相机调参（工程师）
     auto* grpCam = new QGroupBox(QString::fromUtf8("相机调参"), panel);
     auto* lCam   = new QVBoxLayout(grpCam);
-    _expoSpin = addSpinRow(QString::fromUtf8("曝光 (us)"), 0, 100000, 7000, lCam);
+    // 曝光/增益并成一行省纵向空间。单位写死在标签里（不用 suffix）：两个框各带后缀
+    // 会把宽度撑开，360px 的面板放不下两列。
     // 上限 24dB 是 MV-CS050-60GC 的标称增益范围(0~24dB, V5 高满阱模式只有 12.8)。
     // 原先写死的 30 没有任何出处, 提示里那句 0-300 更离谱, 一起对齐到这里。
-    _gainSpin = addSpinRow(QString::fromUtf8("增益 (dB)"), 0, 24, 0, lCam);
+    addSpinRowPair(QString::fromUtf8("曝光(us)"), 0, 100000, 7000, "", &_expoSpin,
+                   QString::fromUtf8("增益(dB)"), 0, 24, 0, "", &_gainSpin, lCam);
     // 增益提示单独占一行: 面板固定 360px, 这么长的说明塞进标签会被挤没
     auto* gainHint = new QLabel(
-        QString::fromUtf8("（0-24，0 是默认；除非太暗，否则不要动默认 0）"), grpCam);
+        QString::fromUtf8("（增益范围0-24，0 是默认；除非太暗，否则不要动默认 0）"), grpCam);
     gainHint->setWordWrap(true);
     gainHint->setStyleSheet("color:#909090; font-size:12px;");
     lCam->addWidget(gainHint);
@@ -365,33 +402,40 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
         _resultRow->setVisible(_saveChk->isChecked());
     });
 
-    // 操作按钮
+    // 操作按钮：四个并成一行。
+    // 原先是两行两列(拍照/退出、关机/重启)，两行约 100px；并成一行约 42px，
+    // 省下的 ~58px 正好盖住整列超屏的那点(1080 屏估算差 30px 上下)。
+    // 宽度交给 stretch 按字数分配(4字:2字:2字:4字 = 3:2:2:3)，不写死 min-width ——
+    // 写死 130px 的话四个要 520px，360px 面板根本放不下。
+    // 实测每键约 90/60/60/90px 宽、42px 高，鼠标点是够用的。
+    // 不用图标: emoji 在 Jetson 上没装 Noto Color Emoji 会显示成方框，
+    // 而「关机/重启」画成电源/回转箭头是全界面最不能猜错的两个键 —— 猜错就是直接断电。
     auto* btnRow = new QHBoxLayout;
+    btnRow->setSpacing(6);
     auto* snap = new QPushButton(QString::fromUtf8("手动拍照"), panel);
     snap->setStyleSheet(
-        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:white;"
+        QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:white;"
                           "background:#2e8b57; border-radius:6px;"));
     auto* exit = new QPushButton(QString::fromUtf8("退出"), panel);
     exit->setStyleSheet(
-        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:white;"
+        QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:white;"
                           "background:#c0392b; border-radius:6px;"));
-    btnRow->addWidget(snap);
-    btnRow->addWidget(exit);
-    v->addLayout(btnRow);
-
-    // 关机 / 重启按钮（同一行，防误触）
-    auto* powerRow = new QHBoxLayout;
+    btnRow->addWidget(snap, 3);
+    btnRow->addWidget(exit, 2);
+    // 拍照/退出 与 关机/重启 之间留一道空档：同处一行后全靠这点间距分组，
+    // 没有它「退出」和「关机」会挨着，误触代价不小。
+    btnRow->addSpacing(16);
     auto* shutdownBtn = new QPushButton(QString::fromUtf8("关机"), panel);
     shutdownBtn->setStyleSheet(
-        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:#ffd2d2;"
+        QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:#ffd2d2;"
                           "background:#7a1f1f; border-radius:6px;"));
     auto* rebootBtn = new QPushButton(QString::fromUtf8("重启电脑"), panel);
     rebootBtn->setStyleSheet(
-        QString::fromUtf8("font-size:18px; font-weight:bold; padding:10px; min-width:130px; color:#ffd2d2;"
+        QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:#ffd2d2;"
                           "background:#6b4a1f; border-radius:6px;"));
-    powerRow->addWidget(shutdownBtn);
-    powerRow->addWidget(rebootBtn);
-    v->addLayout(powerRow);
+    btnRow->addWidget(shutdownBtn, 2);
+    btnRow->addWidget(rebootBtn, 3);
+    v->addLayout(btnRow);
     v->addStretch(1);
 
     scroll->setWidget(panel);
@@ -463,9 +507,23 @@ void MainWindow::setStats(quint64 total, quint64 ng) {
 }
 
 void MainWindow::setGpuTemp(double gpu_c) {
-    QString gpu = gpu_c < 0 ? QString::fromUtf8("--")
-                            : QString::number(gpu_c, 'f', 1) + QString::fromUtf8("°C");
-    _statTemp->setText(QString::fromUtf8("英伟达GPU %1").arg(gpu));
+    _statGpuTemp->setText(gpu_c < 0 ? QString::fromUtf8("--")
+                                    : QString::number(gpu_c, 'f', 1) + QString::fromUtf8("°C"));
+}
+
+void MainWindow::setCpuTemp(double cpu_c) {
+    _statCpuTemp->setText(cpu_c < 0 ? QString::fromUtf8("--")
+                                    : QString::number(cpu_c, 'f', 1) + QString::fromUtf8("°C"));
+}
+
+void MainWindow::setMemoryPct(double pct) {
+    _statMem->setText(pct < 0 ? QString::fromUtf8("--")
+                              : QString::number(pct, 'f', 0) + "%");
+}
+
+void MainWindow::setDiskPct(double pct) {
+    _statDisk->setText(pct < 0 ? QString::fromUtf8("--")
+                               : QString::number(pct, 'f', 0) + "%");
 }
 
 void MainWindow::setMeasure(double long_mm, double short_mm) {
