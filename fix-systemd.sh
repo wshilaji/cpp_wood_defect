@@ -30,6 +30,19 @@ SVC="wood-defect-detector"
 UNIT="/etc/systemd/system/${SVC}.service"
 [ -f "$APP_DIR/$APP" ] || { echo "部署目录里没有 $APP: $APP_DIR" >&2; exit 1; }
 
+# ---- 目录搬过家? ----
+# unit 里的路径是绝对路径(装的时候写死的), 所以目录一挪, 已装的服务就指着老地方 ——
+# 症状是开机不自启、清理定时器不跑, 但手工 ./run.sh 照样正常(它自己 cd 到自己所在目录),
+# 很容易让人以为没事。本脚本本来就会按 APP_DIR 重写 unit, 这里只是把「为什么修好了」
+# 说出来, 免得下次又以为服务自己坏了。
+if [ -f "$UNIT" ]; then
+    OLD="$(sed -n 's#^ExecStart=\(.*\)/run\.sh$#\1#p' "$UNIT" 2>/dev/null | head -1)"
+    if [ -n "$OLD" ] && [ "$OLD" != "$APP_DIR" ]; then
+        echo "注意: 已装的服务指向 $OLD, 与当前目录 $APP_DIR 不一致(目录挪过位置?)"
+        echo "      现在按当前目录重写 unit。"
+    fi
+fi
+
 # ---- 2. 桌面用户(服务以谁的身份跑) ----
 RUNAS="${SUDO_USER:-$(id -un)}"
 [ -n "$RUNAS" ] || RUNAS="$(loginctl list-sessions --no-legend 2>/dev/null | awk '$5=="seat0"{print $3; exit}')"

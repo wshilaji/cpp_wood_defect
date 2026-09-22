@@ -144,6 +144,9 @@ say "生成 check_deps.sh"
 cat > "$DIST/check_deps.sh" <<'EOF'
 #!/bin/bash
 # 目标机运行环境自检: 列出缺什么, 不自动安装
+# 先 cd 到自己所在目录: 下面的检查项(./wood_defect_detector、./models/...)都是相对路径,
+# 这样从哪儿敲都查的是同一份 —— 部署目录随便挪, 本脚本不用跟着改。
+cd "$(cd "$(dirname "$0")" && pwd)" || exit 1
 FAIL=0
 check() { # $1=描述  $2=测试命令
     if eval "$2" >/dev/null 2>&1; then echo "  [OK]  $1"; else echo "  [缺]  $1"; FAIL=1; fi
@@ -151,6 +154,7 @@ check() { # $1=描述  $2=测试命令
 has_lib() { ldconfig -p 2>/dev/null | grep -qF "$1"; }
 
 echo "==== 木板瑕疵检测 - 运行环境自检 ===="
+echo "部署目录: $(pwd)"
 check "CPU 架构 aarch64 (Jetson)"       '[ "$(uname -m)" = "aarch64" ]'
 check "TensorRT10  libnvinfer.so.10"    'has_lib libnvinfer.so.10'
 check "TRT Plugin   libnvinfer_plugin.so.10" 'has_lib libnvinfer_plugin.so.10'
@@ -192,6 +196,19 @@ SVC="wood-defect-detector"
 UNIT="/etc/systemd/system/${SVC}.service"
 
 [ "$(id -u)" = 0 ] || { echo "请用 sudo 运行: sudo ./install-systemd.sh"; exit 1; }
+
+# ---- 目录搬过家? ----
+# unit 里的路径是本脚本【这次运行时】用 pwd 展开的绝对路径(systemd 只吃绝对路径,
+# 写不了相对的)。所以部署目录一旦挪位置, 已装的 unit 就指着空目录 —— 症状是开机
+# 程序不起、清理 timer 也不跑, 但手工 ./run.sh 照样正常(它自己 cd 到自己所在目录),
+# 很容易让人以为没事。这里把不一致报出来, 顺手用新目录重写。
+if [ -f "$UNIT" ]; then
+    OLD="$(sed -n 's#^ExecStart=\(.*\)/run\.sh$#\1#p' "$UNIT" 2>/dev/null | head -1)"
+    if [ -n "$OLD" ] && [ "$OLD" != "$DIR" ]; then
+        echo "注意: 已装的服务指向 $OLD, 与当前目录 $DIR 不一致(目录挪过位置?)"
+        echo "      现在按当前目录重写 unit。"
+    fi
+fi
 
 # ---- 确定桌面用户(sudo 执行者, 或 seat0 会话用户) ----
 RUNAS="${SUDO_USER:-}"
@@ -292,6 +309,11 @@ echo "  清理定时器: sudo systemctl list-timers wood-defect-cleanup.timer"
 echo "  手动清理:   $DIR/cleanup_images.sh"
 echo "  清理日志:   $DIR/output/cleanup.log"
 echo "  卸载:    sudo systemctl disable --now $SVC wood-defect-cleanup.timer && sudo rm $UNIT $CLEANUP_SVC $CLEANUP_TIMER"
+echo ""
+echo "※ 以后把本目录挪到别处(或换挂载点), 必须重跑一次 sudo ./install-systemd.sh:"
+echo "  unit 里的路径是绝对路径(装的时候写死的), 不重跑的话开机自启和清理定时器都"
+echo "  指着空目录 —— 而手工 ./run.sh 还是好的, 不容易发现。"
+echo "  run.sh / cleanup_images.sh 本身不受影响: 它们自己 cd 到自己所在目录。"
 EOF
 chmod +x "$DIST/install-systemd.sh"
 
@@ -309,3 +331,11 @@ echo "  │   4. 删除 source/build/third_party 之前, 务必备份         �
 echo "  │      best.engine 的 ONNX 源 + 本仓库源码(离线存档)。      │"
 echo "  │      TensorRT 引擎跟 GPU 绑定, 换机器要重新生成。         │"
 echo "  └─────────────────────────────────────────────────────────┘"
+echo ""
+# 写在框外面: 框里每行宽度是手对齐的, 塞进去就得重排。这条不是「首次部署」的步骤, 而是
+# 「以后挪目录」的注意事项, 单独说更清楚。
+echo "  注: 这个目录整个挪到别处没问题 —— run.sh / cleanup_images.sh / check_deps.sh"
+echo "      都是先 cd 到自己所在目录, 程序内部也全用相对路径(./output、./models…)。"
+echo "      唯一要重跑的是 sudo ./install-systemd.sh: 它生成的 systemd unit 里存的是"
+echo "      绝对路径, 目录一挪就指着老地方(症状: 开机不自启、清理定时器不跑, 但手工"
+echo "      ./run.sh 还正常), 在新位置重跑一次即可。"
