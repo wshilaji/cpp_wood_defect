@@ -22,9 +22,12 @@ public:
 
     /** 整体 NG 判定：jieba/dongba 按数量，dongban/quebian 按面积占比(占整图)，
      *  板长/板宽按测得尺寸；其它默认 OK；reason 输出 NG 原因
-     *  @param len_mm / wid_mm  测量出的板长/板宽（0=未测到，不判尺寸 NG） */
+     *  @param len_mm / wid_mm  测量出的板长/板宽（0=未测到，不判尺寸 NG）
+     *  @param size_only  出参，传了才填：NG 是否【只】由尺寸引起（缺陷规则一条都没触发）。
+     *                    存图那边靠它把纯尺寸 NG 排除掉，见 main.cpp 存图段。 */
     bool isNG(const std::vector<Defect>& defects, const cv::Size& size,
-              float len_mm, float wid_mm, std::string& reason) const;
+              float len_mm, float wid_mm, std::string& reason,
+              bool* size_only = nullptr) const;
     void draw(cv::Mat& frame, const std::vector<Defect>& defects);
 
     /** 画左上角统计面板：类别数 + 各类框数 + dongban/quebian 面积和 */

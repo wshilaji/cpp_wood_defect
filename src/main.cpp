@@ -411,7 +411,10 @@ int main(int argc, char** argv) {
             // 尺寸判定用测量出的长/宽（未测到传 0，不判尺寸 NG）
             float len_mm = measure.valid ? measure.long_mm : 0.0f;
             float wid_mm = measure.valid ? measure.short_mm : 0.0f;
-            bool is_ng = post.isNG(defects, sz, len_mm, wid_mm, ng_reason);
+            // ng_size_only 由 isNG 顺手带出来：这块板 NG 只因为板长/板宽不够、
+            // 缺陷规则一条都没触发 —— 这种板不存图，见下面存图段
+            bool ng_size_only = false;
+            bool is_ng = post.isNG(defects, sz, len_mm, wid_mm, ng_reason, &ng_size_only);
             if (is_ng) ng_total++;
             total++;
 
@@ -423,12 +426,20 @@ int main(int argc, char** argv) {
             // ---- 存图 ----
             //   NG 板 → 原始图(frame，干净) + 结果图(img，带框)，【无条件全存】，
             //           不吃开发者模式开关 —— 留档不该依赖谁记得去开那个开关。
+            //           例外：ng_size_only（只有板长/板宽不够、缺陷规则一条都没触发）的
+            //           板不存 —— 尺寸判的是板的规格不是板面质量，图留着也查不出什么，
+            //           而尺寸规则卡得紧时这种板还最多。有真缺陷的一律照存。
             //   OK 板 → 默认不存；开发者模式开着时按各自比例抽样（查漏检用）。
             // 写不写由 worker 说了算（磁盘空间/目录总量两道闸），它拒收就丢弃，主线程不等。
             if (Config::SAVE_IMAGES) {
                 if (is_ng) {
-                    saver.push(frame, true, true,  board_id);   // 原始图
-                    saver.push(img,   true, false, board_id);   // 结果图
+                    // 纯尺寸 NG 整块跳过，且【不能】掉到下面的 OK 分支去：
+                    // 那边 push 的 is_ng=false，会把这块 NG 板存成 _OK.jpg —— 等于
+                    // 把 NG 留档伪装成 OK，回溯时比不存还坏。
+                    if (!ng_size_only) {
+                        saver.push(frame, true, true,  board_id);   // 原始图
+                        saver.push(img,   true, false, board_id);   // 结果图
+                    }
                 } else {
                     static uint64_t ok_raw_shot = 0, ok_res_shot = 0;
                     if (ok_raw_pct > 0 && (++ok_raw_shot % (100 / ok_raw_pct)) == 0)

@@ -80,7 +80,8 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 // 阈值全部运行时可调, 由界面「工人设置」输入框经 main.cpp 每板下发(见 postprocessor.h)。
 // ============================================================
 bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& size,
-                         float len_mm, float wid_mm, std::string& reason) const {
+                         float len_mm, float wid_mm, std::string& reason,
+                         bool* size_only) const {
     int   jieba_cnt   = 0;
     int   dongba_cnt  = 0;
     int   heiba_cnt   = 0;
@@ -122,6 +123,10 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
     if ((dongban_sum + quebian_sum) / total_area > _dongban_quebian_area_ratio)
         reasons.push_back("漏洞+缺边>" + pctStr(_dongban_quebian_area_ratio) + "%");
 
+    // 尺寸规则跟上面那 6 条缺陷规则不是一回事，得分开数：存图那边只给「有真缺陷」的
+    // NG 留档，纯尺寸 NG（板小了一点）不存。所以拼尺寸原因之前先把缺陷原因的条数记下来。
+    const size_t n_defect = reasons.size();
+
     // 木板尺寸判定：测得长/宽低于阈值判 NG（0=没测到，不判尺寸）
     if (len_mm > 0 && len_mm < _min_length_mm)
         reasons.push_back("板长<" + std::to_string(_min_length_mm) + "mm");
@@ -133,6 +138,8 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
         if (i) reason += " ";
         reason += reasons[i];
     }
+    // 只有尺寸原因：缺陷原因一条都没有，而确实多了尺寸原因
+    if (size_only) *size_only = reasons.size() > n_defect && n_defect == 0;
     return !reason.empty();
 }
 
