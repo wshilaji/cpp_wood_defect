@@ -8,7 +8,7 @@ namespace Config {
 constexpr const char* CAMERA_IP        = "192.168.2.10";
 constexpr int         CAMERA_WIDTH     = 2448;   // MV-CS050-60GC 原生分辨率
 constexpr int         CAMERA_HEIGHT    = 2048;
-constexpr float       CAMERA_EXPOSURE  = 7000.0f;
+constexpr float       CAMERA_EXPOSURE  = 6000.0f;
 constexpr float       CAMERA_GAIN      = 0.0f;
 constexpr int         CAMERA_TRIGGER   = 1;  // 0=连续 1=软触发 2=硬触发
 
@@ -47,17 +47,25 @@ constexpr float SCRATCH_NG_LEN  = 50.0f;    // shuwen/piwenba/baowen 纹类缺�
 constexpr float SCRATCH_ASPECT  = 5.0f;     // 纹类缺陷长宽比阈值
 
 // ---- 聚合判定（数量 / 面积占比）----
-constexpr int   JIEBA_MAX_COUNT  = 8;        // jieba 节疤:数量 > 此值判 NG
-constexpr int   DONGBA_MAX_COUNT = 8;        // dongba 死节:数量 > 此值判 NG
-constexpr int   HEIBA_MAX_COUNT  = 30;       // heiba 小油疤:数量 > 此值判 NG
-constexpr float DONGBAN_AREA_RATIO = 0.01f;  // dongban 洞板:面积和占整图比例 > 1% 判 NG
-constexpr float QUEBIAN_AREA_RATIO = 0.01f;  // quebian 缺边:面积和占整图比例 > 1% 判 NG
-constexpr int   JIEBA_DONGBA_MAX_COUNT = 12;      // jieba+dongba 数量之和 > 此值判 NG
-constexpr float DONGBAN_QUEBIAN_AREA_RATIO = 0.015f; // dongban+quebian 面积之和占比 > 1.5% 判 NG
+// 这些是「没有 config.ini 时」的出厂默认值，唯一权威来源是界面上的工人设置
+// （每块板都会把界面值下发给后处理），改这里只是让默认值和现场调好的那套对齐。
+// 现场 config.ini: jieba_max=10 dongba_max=2 heiba_max=24
+//                 dongban_area_pct=0.2 quebian_area_pct=0.5
+//                 jieba_dongba_max=6 dongban_quebian_area_pct=0.4
+constexpr int   JIEBA_MAX_COUNT  = 10;       // jieba 节疤:数量 > 此值判 NG
+constexpr int   DONGBA_MAX_COUNT = 2;        // dongba 死节:数量 > 此值判 NG
+constexpr int   HEIBA_MAX_COUNT  = 24;       // heiba 小油疤:数量 > 此值判 NG
+constexpr float DONGBAN_AREA_RATIO = 0.002f; // dongban 洞板:面积和占整图比例 > 0.2% 判 NG
+constexpr float QUEBIAN_AREA_RATIO = 0.005f; // quebian 缺边:面积和占整图比例 > 0.5% 判 NG
+constexpr int   JIEBA_DONGBA_MAX_COUNT = 6;       // jieba+dongba 数量之和 > 此值判 NG
+constexpr float DONGBAN_QUEBIAN_AREA_RATIO = 0.004f; // dongban+quebian 面积之和占比 > 0.4% 判 NG
 
-// ---- 木板尺寸判定（测量长/宽低于阈值判 NG，默认整板长 1200 / 宽 600 的一半） ----
-constexpr int   MIN_LENGTH_MM = 600;   // 板长 < 此值判 NG
-constexpr int   MIN_WIDTH_MM  = 300;   // 板宽 < 此值判 NG
+// ---- 木板尺寸判定（测量长/宽低于阈值判 NG）----
+// 现场 min_len_mm=1200 / min_wid_mm=600 = 整板尺寸，也就是「比整板小就判 NG」，
+// 不再是原先的「整板一半」。注意这会让判定贴着整板尺寸走，测量本身有误差时
+// 边缘板会来回翻，真要卡这么紧得先确认测量精度。
+constexpr int   MIN_LENGTH_MM = 1200;   // 板长 < 此值判 NG
+constexpr int   MIN_WIDTH_MM  = 600;    // 板宽 < 此值判 NG
 
 // ---- 相机标定（木板长宽测量） ----
 // MV-CS050-60GC 像元尺寸 3.45μm (正方形)

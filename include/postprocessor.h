@@ -69,13 +69,15 @@ public:
 private:
     float _thresh;
     std::vector<std::string> _classes;
-    int   _jieba_max_count            = Config::JIEBA_MAX_COUNT;            // 运行时阈值，默认 8
-    int   _dongba_max_count           = Config::DONGBA_MAX_COUNT;           // 默认 8
-    int   _heiba_max_count            = Config::HEIBA_MAX_COUNT;            // 默认 30
-    float _dongban_area_ratio         = Config::DONGBAN_AREA_RATIO;         // 默认 1%
-    float _quebian_area_ratio         = Config::QUEBIAN_AREA_RATIO;         // 默认 1%
-    int   _jieba_dongba_max_count     = Config::JIEBA_DONGBA_MAX_COUNT;     // 默认 12
-    float _dongban_quebian_area_ratio = Config::DONGBAN_QUEBIAN_AREA_RATIO; // 默认 1.5%
-    int   _min_length_mm              = Config::MIN_LENGTH_MM;              // 默认 600
-    int   _min_width_mm               = Config::MIN_WIDTH_MM;               // 默认 300
+    // 下面这些初值只在「第一块板之前」有效：每块板都会把界面上的工人设置 setXxx 下来覆盖。
+    // 数值的出处统一在 config.h，这里不再复述数字（以前写死在注释里，改了常量注释就成假的）。
+    int   _jieba_max_count            = Config::JIEBA_MAX_COUNT;
+    int   _dongba_max_count           = Config::DONGBA_MAX_COUNT;
+    int   _heiba_max_count            = Config::HEIBA_MAX_COUNT;
+    float _dongban_area_ratio         = Config::DONGBAN_AREA_RATIO;
+    float _quebian_area_ratio         = Config::QUEBIAN_AREA_RATIO;
+    int   _jieba_dongba_max_count     = Config::JIEBA_DONGBA_MAX_COUNT;
+    float _dongban_quebian_area_ratio = Config::DONGBAN_QUEBIAN_AREA_RATIO;
+    int   _min_length_mm              = Config::MIN_LENGTH_MM;
+    int   _min_width_mm               = Config::MIN_WIDTH_MM;
 };

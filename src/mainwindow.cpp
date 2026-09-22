@@ -317,25 +317,28 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 活节/死节/小油疤 数量阈值 —— 竖排成一列
     // (并排放不下三个: 面板固定 360px, 每个「6字标签+输入框」约 150px, 三个要 466px)
     // 活节 = 节扣发白、按不掉, 不影响使用; 死节 = 节扣没掉但一按就掉
-    _jiebaSpin  = addSpinRow(QString::fromUtf8("活节数量大于"), 0, 50, 8, lSet);
-    _dongbaSpin = addSpinRow(QString::fromUtf8("死节数量大于"), 0, 50, 8, lSet);
+    _jiebaSpin  = addSpinRow(QString::fromUtf8("活节数量大于"), 0, 50, 10, lSet);
+    _dongbaSpin = addSpinRow(QString::fromUtf8("死节数量大于"), 0, 50, 2, lSet);
     // 小油疤(黑色油滴到板上, 板子不碎) 数量阈值 —— 数量 > 此值判 NG
-    _heibaSpin = addSpinRow(QString::fromUtf8("小油疤数量大于"), 0, 500, 30, lSet);
+    _heibaSpin = addSpinRow(QString::fromUtf8("小油疤数量大于"), 0, 500, 24, lSet);
     // 漏洞/缺边面积 —— 横排一行，省面板空间
-    addSpinRowPairD(QString::fromUtf8("漏洞面积"), 0, 100, 1.0, " %", &_dongbanAreaSpin,
-                    QString::fromUtf8("缺边面积"), 0, 100, 1.0, " %", &_quebianAreaSpin, lSet);
+    addSpinRowPairD(QString::fromUtf8("漏洞面积"), 0, 100, 0.2, " %", &_dongbanAreaSpin,
+                    QString::fromUtf8("缺边面积"), 0, 100, 0.5, " %", &_quebianAreaSpin, lSet);
     // 标注备注 —— 大油疤在 labelme 里也标成 dongban, 所以跟着漏洞这条面积规则一起判
     auto* holeHint = new QLabel(QString::fromUtf8("（大油疤归到漏洞里面）"), grpSet);
     holeHint->setWordWrap(true);
     holeHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(holeHint);
-    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("活节+死节数量"), 0, 100, 12, lSet);
-    _dongbanQuebianSpin = addSpinRowD(QString::fromUtf8("漏洞+缺边面积"), 0, 100, 2.0, " %", lSet);
-    // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG（默认整板一半 600/300）
-    addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 600, " mm", &_lenSpin,
-                   QString::fromUtf8("板宽小于"), 0, 2000, 300, " mm", &_widSpin, lSet);
-    // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示
-    _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
+    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("活节+死节数量"), 0, 100, 6, lSet);
+    _dongbanQuebianSpin = addSpinRowD(QString::fromUtf8("漏洞+缺边面积"), 0, 100, 0.4, " %", lSet);
+    // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG
+    // 默认 1200/600 = 整板尺寸本身，即「比整板小就判 NG」（不再是原先的整板一半）
+    addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 1200, " mm", &_lenSpin,
+                   QString::fromUtf8("板宽小于"), 0, 2000, 600, " mm", &_widSpin, lSet);
+    // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示。
+    // 注意：这两个值【没有】持久化（下面那 11 个键里没它俩），所以 10 只是构造时的初值，
+    // 每次启动都回到 10，现场改了不存 —— 要让它记住得另加 load/save + connect。
+    _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 10, lSet, &_rawRow);
     _resultSpin = addSpinRow(QString::fromUtf8("结果图保存 %"), 0, 100, 0, lSet, &_resultRow);
     _rawRow->setVisible(false);
     _resultRow->setVisible(false);
@@ -358,7 +361,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 会把宽度撑开，360px 的面板放不下两列。
     // 上限 24dB 是 MV-CS050-60GC 的标称增益范围(0~24dB, V5 高满阱模式只有 12.8)。
     // 原先写死的 30 没有任何出处, 提示里那句 0-300 更离谱, 一起对齐到这里。
-    addSpinRowPair(QString::fromUtf8("曝光(us)"), 0, 100000, 7000, "", &_expoSpin,
+    addSpinRowPair(QString::fromUtf8("曝光(us)"), 0, 100000, 6000, "", &_expoSpin,
                    QString::fromUtf8("增益(dB)"), 0, 24, 0, "", &_gainSpin, lCam);
     // 增益提示单独占一行: 面板固定 360px, 这么长的说明塞进标签会被挤没
     auto* gainHint = new QLabel(
@@ -369,17 +372,20 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     v->addWidget(grpCam);
 
     // ---- 设置持久化: 存到当前目录 config.ini（可见文件，重启后保留） ----
+    // 下面这些 value(key, 默认值) 里的默认值就是「出厂值」：没有 config.ini 时用它，
+    // 而上面各框构造时给的那个数其实永远被这里覆盖（两个数保持一致只是为了别读混）。
+    // 数值与 include/config.h 里的同名常量对齐（config.h 是给没走界面那条路的地方用的）。
     QSettings s(QStringLiteral("config.ini"), QSettings::IniFormat);
-    _jiebaSpin->setValue(s.value("jieba_max", 8).toInt());
-    _dongbaSpin->setValue(s.value("dongba_max", 8).toInt());
-    _heibaSpin->setValue(s.value("heiba_max", 30).toInt());
-    _dongbanAreaSpin->setValue(s.value("dongban_area_pct", 1).toDouble());
-    _quebianAreaSpin->setValue(s.value("quebian_area_pct", 1).toDouble());
-    _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 12).toInt());
-    _dongbanQuebianSpin->setValue(s.value("dongban_quebian_area_pct", 2).toDouble());
-    _lenSpin->setValue(s.value("min_len_mm", 600).toInt());
-    _widSpin->setValue(s.value("min_wid_mm", 300).toInt());
-    _expoSpin->setValue(s.value("exposure_us", 7000).toInt());
+    _jiebaSpin->setValue(s.value("jieba_max", 10).toInt());
+    _dongbaSpin->setValue(s.value("dongba_max", 2).toInt());
+    _heibaSpin->setValue(s.value("heiba_max", 24).toInt());
+    _dongbanAreaSpin->setValue(s.value("dongban_area_pct", 0.2).toDouble());
+    _quebianAreaSpin->setValue(s.value("quebian_area_pct", 0.5).toDouble());
+    _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 6).toInt());
+    _dongbanQuebianSpin->setValue(s.value("dongban_quebian_area_pct", 0.4).toDouble());
+    _lenSpin->setValue(s.value("min_len_mm", 1200).toInt());
+    _widSpin->setValue(s.value("min_wid_mm", 600).toInt());
+    _expoSpin->setValue(s.value("exposure_us", 6000).toInt());
     _gainSpin->setValue(s.value("gain_db", 0).toInt());
     connect(_jiebaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_max", v); });
