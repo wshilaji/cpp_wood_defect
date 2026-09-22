@@ -81,34 +81,33 @@ static QLabel* addStatRow(const QString& name, QVBoxLayout* lay) {
     return val;
 }
 
-// 一行横排两对「名称 + 值」：统计项变多（9 项）后一列排会顶出屏幕，
-// 工人就得拖滚动条。两列省下近一半高度。
-// 两个标签都用 stretch=1 平分剩余空间，各自的「值」就落在本列右边缘，两列自然对齐。
-static void addStatRowPair(const QString& n1, QLabel** v1,
-                           const QString& n2, QLabel** v2,
-                           QVBoxLayout* lay) {
-    auto* row = new QHBoxLayout;
-    row->setSpacing(14);
+// 「左列 | 竖线 | 右列」骨架，返回两个列布局供调用方往里塞行。
+//
+// 为什么不是「每行插一小段竖线」：一是行间距（4px）会把线切成虚线，二是每行的
+// 分界点取决于该行值标签的宽度（"1234" 与 "45.2°C" 不等宽），得额外把值列宽度
+// 统一了才能对齐。改成整条通高的线 + 左右两列各 stretch=1，等宽是天然的，
+// 竖线位置也就恒在正中间，不依赖任何宽度计算。
+static void addStatBlock(QVBoxLayout* dst, QVBoxLayout** colL, QVBoxLayout** colR) {
+    auto* blk = new QHBoxLayout;
+    blk->setSpacing(10);
 
-    auto* l1 = new QLabel(n1);
-    l1->setStyleSheet("color:#c8c8c8;");
-    auto* x1 = new QLabel("--");
-    x1->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    x1->setStyleSheet("color:#ffffff; font-weight:bold; font-size:16px;");
-    row->addWidget(l1, 1);
-    row->addWidget(x1, 0);
+    // 竖线用普通 QWidget + 背景色，不用 QFrame::VLine —— QFrame 的线色走调色板，
+    // 叠上全局深色样式表后各平台画出来的深浅不一致，给死颜色才可控。
+    // setFixedWidth(1) 管住横向，纵向 Expanding 让它拉满整块高度。
+    auto* sep = new QWidget;
+    sep->setFixedWidth(1);
+    sep->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    sep->setStyleSheet("background:#4a5360;");
 
-    auto* l2 = new QLabel(n2);
-    l2->setStyleSheet("color:#c8c8c8;");
-    auto* x2 = new QLabel("--");
-    x2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    x2->setStyleSheet("color:#ffffff; font-weight:bold; font-size:16px;");
-    row->addWidget(l2, 1);
-    row->addWidget(x2, 0);
+    *colL = new QVBoxLayout;
+    *colR = new QVBoxLayout;
+    (*colL)->setSpacing(4);
+    (*colR)->setSpacing(4);
 
-    lay->addLayout(row);
-    *v1 = x1;
-    if (v2) *v2 = x2;
+    blk->addLayout(*colL, 1);
+    blk->addWidget(sep);
+    blk->addLayout(*colR, 1);
+    dst->addLayout(blk);
 }
 
 static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxLayout* lay,
@@ -284,20 +283,32 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     lRs->addWidget(_reasonLabel);
     v->addWidget(grpRs);
 
-    // 统计
+    // 统计 —— 一整块 4×2，中间一条通到底的竖线，木板尺寸单独占最后一行：
+    //   总检数       1234  │  合格率     99.0%
+    //   不合格数       12  │  耗时       210ms
+    //   GPU 温度  45.2°C  │  CPU 温度  43.1°C
+    //   内存          41%  │  硬盘         14%
+    //   木板尺寸          1200.0 × 600.0 mm
+    // 木板尺寸放最下面而不是中间：它跨满整行，夹在两列中间会把竖线顶成两截。
     auto* grpStt = new QGroupBox(QString::fromUtf8("统计"), panel);
     auto* lStt   = new QVBoxLayout(grpStt);
-    lStt->setSpacing(4);   // 两列排布后行数多，行距收一点
-    addStatRowPair(QString::fromUtf8("总检数"), &_statTotal,
-                   QString::fromUtf8("NG 数"),  &_statNg,    lStt);
-    addStatRowPair(QString::fromUtf8("合格率"), &_statRate,
-                   QString::fromUtf8("耗时"),   &_statCycle, lStt);
-    // 尺寸的值长（1200.0 × 600.0 mm），占一整行
+    lStt->setSpacing(6);
+
+    QVBoxLayout* colL = nullptr;
+    QVBoxLayout* colR = nullptr;
+    addStatBlock(lStt, &colL, &colR);
+    // 左列：计数 + 系统状态          右列：比率/耗时 + 系统状态
+    _statTotal   = addStatRow(QString::fromUtf8("总检数"),   colL);
+    _statNg      = addStatRow(QString::fromUtf8("不合格数"), colL);
+    _statGpuTemp = addStatRow(QString::fromUtf8("GPU 温度"), colL);
+    _statMem     = addStatRow(QString::fromUtf8("内存"),     colL);
+    _statRate    = addStatRow(QString::fromUtf8("合格率"),   colR);
+    _statCycle   = addStatRow(QString::fromUtf8("耗时"),     colR);
+    _statCpuTemp = addStatRow(QString::fromUtf8("CPU 温度"), colR);
+    _statDisk    = addStatRow(QString::fromUtf8("硬盘"),     colR);
+
+    // 值长（1200.0 × 600.0 mm），不配对，占整行
     _statDims = addStatRow(QString::fromUtf8("木板尺寸"), lStt);
-    addStatRowPair(QString::fromUtf8("GPU 温度"), &_statGpuTemp,
-                   QString::fromUtf8("CPU 温度"), &_statCpuTemp, lStt);
-    addStatRowPair(QString::fromUtf8("内存"), &_statMem,
-                   QString::fromUtf8("硬盘"), &_statDisk, lStt);
     v->addWidget(grpStt);
 
     // 工人设置

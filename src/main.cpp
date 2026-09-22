@@ -17,6 +17,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <cctype>          // std::tolower：thermal zone 的 type 大小写各版 L4T 不统一
 #include <sys/statvfs.h>
 
 #include <QApplication>
@@ -111,14 +112,28 @@ static float g_diskPct = -1;
 // 按 thermal zone 的 type 找传感器路径，不写死编号：
 // thermal_zoneN 的编号跟板子型号/内核版本有关，写死 zone1 换台机器可能读到别的传感器。
 // 找不到返回空串，调用方显示 --。
+//
+// 匹配必须【不区分大小写】。各版 L4T 的 type 大小写不一样：
+//   老 Nano(4GB, 早期 L4T)  type 是大写 "CPU-therm" / "GPU-therm"
+//   Orin  (8GB, JetPack5/6) type 是全小写 "cpu-therm" / "gpu-therm"
+// 只按大写找的话在 Orin 上全部落空，温度恒显示 "--"。
+// 这个坑是 2026-09-22 现场暴露的：改成按 type 找之后 CPU/GPU 温度都不显示了，
+// 而老代码写死读 /sys/devices/virtual/thermal/thermal_zone1/temp、压根不看 type，
+// 所以从没暴露过 —— 换句话说这问题是我改出来的，不是老代码本来就有的。
+static std::string toLowerAscii(std::string s) {
+    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+
 static std::string findThermalZone(const char* keyword) {
+    const std::string key = toLowerAscii(keyword);
     for (int i = 0; i < 16; ++i) {
         std::string base = "/sys/class/thermal/thermal_zone" + std::to_string(i);
         std::ifstream tf(base + "/type");
         if (!tf.is_open()) continue;              // 编号不连续，跳过
         std::string type;
         std::getline(tf, type);
-        if (type.find(keyword) != std::string::npos) return base + "/temp";
+        if (toLowerAscii(type).find(key) != std::string::npos) return base + "/temp";
     }
     return std::string();
 }
