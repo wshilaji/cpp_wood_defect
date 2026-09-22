@@ -66,7 +66,7 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 //       典型: 小油疤单个直径才几毫米, 但一块板上撒几十个就该扔了。
 //       注: 30 个小油疤的面积和 > 1 个大油疤, 但两者结论相反(小的过、大的扔),
 //           所以这类必须按数量判; 想用面积规则表达它俩是做不到的。
-//   【面积类】dongban(漏洞) / quebian(缺边)
+//   【面积类】dongban(破洞) / quebian(缺边)
 //       大面积缺陷, 按各自框面积之和占整图比例判。
 //       注: 这里用的是检测框 w*h, 不是真实缺陷像素面积 —— 圆形框比实际大约 1.27 倍。
 //
@@ -114,14 +114,14 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects, const cv::Size& siz
     if (heiba_cnt > _heiba_max_count)
         reasons.push_back("小油疤>" + std::to_string(_heiba_max_count));
     if (dongban_sum / total_area > _dongban_area_ratio)
-        reasons.push_back("漏洞>" + pctStr(_dongban_area_ratio) + "%");
+        reasons.push_back("破洞>" + pctStr(_dongban_area_ratio) + "%");
     if (quebian_sum / total_area > _quebian_area_ratio)
         reasons.push_back("缺边>" + pctStr(_quebian_area_ratio) + "%");
     // 组合判定：jieba+dongba 数量之和、dongban+quebian 面积之和
     if (jieba_cnt + dongba_cnt > _jieba_dongba_max_count)
         reasons.push_back("活节+死节>" + std::to_string(_jieba_dongba_max_count));
     if ((dongban_sum + quebian_sum) / total_area > _dongban_quebian_area_ratio)
-        reasons.push_back("漏洞+缺边>" + pctStr(_dongban_quebian_area_ratio) + "%");
+        reasons.push_back("破洞+缺边>" + pctStr(_dongban_quebian_area_ratio) + "%");
 
     // 尺寸规则跟上面那 6 条缺陷规则不是一回事，得分开数：存图那边只给「有真缺陷」的
     // NG 留档，纯尺寸 NG（板小了一点）不存。所以拼尺寸原因之前先把缺陷原因的条数记下来。

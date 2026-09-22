@@ -28,7 +28,7 @@ constexpr float       CONF_THRESHOLD = 0.5f;
 //   jieba   活节   —— 木节发白、按不掉, 不影响使用
 //   dongba  死节   —— 节扣没掉, 但使劲一按就掉
 //   heiba   小油疤 —— 黑色油滴在板面, 板子不碎; 单个没事, 数量多了才扔
-//   dongban 漏洞   —— 节扣掉了板子被穿透, 底下黑传送带透出来; **大油疤也标成这一类**
+//   dongban 破洞   —— 节扣掉了板子被穿透, 底下黑传送带透出来; **大油疤也标成这一类**
 //   quebian 缺边
 // 其余(shupi/shuwen/piwenba/baowen/liefeng/suibian/heiban/banwen/banwenba)
 // 目前只在图上画框显示, 不参与 NG 判定 —— 判定逻辑见 postprocessor.cpp 的 isNG()。

@@ -181,44 +181,6 @@ static QDoubleSpinBox* addSpinRowD(const QString& name, double lo, double hi, do
     return sp;
 }
 
-// 一行横排两个 QDoubleSpinBox（支持小数）
-static void addSpinRowPairD(const QString& name1, double lo1, double hi1, double def1,
-                            const QString& unit1, QDoubleSpinBox** out1,
-                            const QString& name2, double lo2, double hi2, double def2,
-                            const QString& unit2, QDoubleSpinBox** out2,
-                            QVBoxLayout* lay) {
-    auto* box = new QWidget;
-    auto* row = new QHBoxLayout(box);
-    row->setContentsMargins(0, 0, 0, 0);
-    row->setSpacing(8);
-
-    auto* lbl1 = new QLabel(name1);
-    lbl1->setStyleSheet("color:#c8c8c8;");
-    auto* sp1 = new QDoubleSpinBox;
-    sp1->setRange(lo1, hi1);
-    sp1->setDecimals(1);
-    sp1->setSingleStep(0.5);
-    sp1->setValue(def1);
-    if (!unit1.isEmpty()) sp1->setSuffix(unit1);
-    row->addWidget(lbl1, 1);
-    row->addWidget(sp1);
-
-    auto* lbl2 = new QLabel(name2);
-    lbl2->setStyleSheet("color:#c8c8c8;");
-    auto* sp2 = new QDoubleSpinBox;
-    sp2->setRange(lo2, hi2);
-    sp2->setDecimals(1);
-    sp2->setSingleStep(0.5);
-    sp2->setValue(def2);
-    if (!unit2.isEmpty()) sp2->setSuffix(unit2);
-    row->addWidget(lbl2, 1);
-    row->addWidget(sp2);
-
-    lay->addWidget(box);
-    if (out1) *out1 = sp1;
-    if (out2) *out2 = sp2;
-}
-
 static void setLed(QLabel* led, bool on) {
     led->setStyleSheet(QString("color:%1; font-size:16px;")
                        .arg(on ? "#2ecc71" : "#666"));
@@ -317,20 +279,27 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 活节/死节/小油疤 数量阈值 —— 竖排成一列
     // (并排放不下三个: 面板固定 360px, 每个「6字标签+输入框」约 150px, 三个要 466px)
     // 活节 = 节扣发白、按不掉, 不影响使用; 死节 = 节扣没掉但一按就掉
-    _jiebaSpin  = addSpinRow(QString::fromUtf8("活节数量大于"), 0, 50, 10, lSet);
-    _dongbaSpin = addSpinRow(QString::fromUtf8("死节数量大于"), 0, 50, 2, lSet);
+    // 括号里的拼音是模型/日志里那个类的名字(labels.txt、推理日志、图上画的都是它)，
+    // 现场排查时不用再猜「活节对应哪个英文名」。
+    _jiebaSpin  = addSpinRow(QString::fromUtf8("活节(jieba)数量大于"), 0, 50, 10, lSet);
+    _dongbaSpin = addSpinRow(QString::fromUtf8("死节(dongba)数量大于"), 0, 50, 2, lSet);
     // 小油疤(黑色油滴到板上, 板子不碎) 数量阈值 —— 数量 > 此值判 NG
-    _heibaSpin = addSpinRow(QString::fromUtf8("小油疤数量大于"), 0, 500, 24, lSet);
-    // 漏洞/缺边面积 —— 横排一行，省面板空间
-    addSpinRowPairD(QString::fromUtf8("漏洞面积"), 0, 100, 0.2, " %", &_dongbanAreaSpin,
-                    QString::fromUtf8("缺边面积"), 0, 100, 0.5, " %", &_quebianAreaSpin, lSet);
-    // 标注备注 —— 大油疤在 labelme 里也标成 dongban, 所以跟着漏洞这条面积规则一起判
-    auto* holeHint = new QLabel(QString::fromUtf8("（大油疤归到漏洞里面）"), grpSet);
+    _heibaSpin = addSpinRow(QString::fromUtf8("小油疤(heiba)数量大于"), 0, 500, 24, lSet);
+    // 破洞/缺边面积 —— 竖排两行（原来横排一行省空间，加上拼音后横排放不下了）：
+    // 每个标签 = 4 个汉字(~53px) + "(xxxxxx)" 9 个西文(~63px) ≈ 116px，加一个带 " %" 的
+    // 输入框(~80px) = 196px；横排两列再加两道间距 24px 就是 ~416px，而分组框内宽只有
+    // ~342px —— 差得不远，但现场字体/DPI 一变就是切标签或挤输入框。竖排一行只占 ~196px。
+    _dongbanAreaSpin = addSpinRowD(QString::fromUtf8("破洞(dongban)面积大于"), 0, 100, 0.2, " %", lSet);
+    // 标注备注 —— 紧跟在「破洞面积」下面: 说的是这条规则收哪些缺陷, 放远了就对不上号
+    // (大油疤在 labelme 里也标成 dongban, 所以跟着破洞这条面积规则一起判)
+    auto* holeHint = new QLabel(QString::fromUtf8("（大油疤归到破洞里面）"), grpSet);
     holeHint->setWordWrap(true);
     holeHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(holeHint);
-    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("活节+死节数量"), 0, 100, 6, lSet);
-    _dongbanQuebianSpin = addSpinRowD(QString::fromUtf8("漏洞+缺边面积"), 0, 100, 0.4, " %", lSet);
+    _quebianAreaSpin = addSpinRowD(QString::fromUtf8("缺边(quebian)面积大于"), 0, 100, 0.5, " %", lSet);
+    // 组合规则: 单类都没超、但两类加起来超了也判 NG（跟上面单类同一个「大于」口径）
+    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("活节+死节数量大于"), 0, 100, 6, lSet);
+    _dongbanQuebianSpin = addSpinRowD(QString::fromUtf8("破洞+缺边面积大于"), 0, 100, 0.4, " %", lSet);
     // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG
     // 默认 1200/600 = 整板尺寸本身，即「比整板小就判 NG」（不再是原先的整板一半）
     addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 1200, " mm", &_lenSpin,
