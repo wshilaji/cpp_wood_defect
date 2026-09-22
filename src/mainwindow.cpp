@@ -336,9 +336,11 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 1200, " mm", &_lenSpin,
                    QString::fromUtf8("板宽小于"), 0, 2000, 600, " mm", &_widSpin, lSet);
     // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示。
-    // 注意：这两个值【没有】持久化（下面那 11 个键里没它俩），所以 10 只是构造时的初值，
-    // 每次启动都回到 10，现场改了不存 —— 要让它记住得另加 load/save + connect。
-    _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 10, lSet, &_rawRow);
+    // 两个初值都是 0 —— 也就是「解锁之后默认也不存 OK 板」，要抽样得工程师自己往里填。
+    // 注意：这两个值【没有】持久化（下面那 11 个键里没它俩），所以每次启动都回到 0，
+    // 现场调过也不留（ini 里那个 raw_save_pct 是死键，跟这行没关系）——
+    // 要让它记住得另加 load/save + connect。
+    _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
     _resultSpin = addSpinRow(QString::fromUtf8("结果图保存 %"), 0, 100, 0, lSet, &_resultRow);
     _rawRow->setVisible(false);
     _resultRow->setVisible(false);
