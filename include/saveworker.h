@@ -237,13 +237,16 @@ private:
     uint64_t dirBytesEstimate() {
         const auto now = std::chrono::steady_clock::now();
         bool due = false;
-        if (!_scanned) {
-            due = true;
-        } else if (_scanBytes + _writtenSinceScan >= RESCAN_AT_BYTES) {
-            due = true;
-        } else if (blocked() &&
-                   std::chrono::duration<double>(now - _lastScan).count() >= RESCAN_BLOCKED_SEC) {
-            // 停写时正常门槛是「每次都成立」，这里给它单独限频（见 RESCAN_BLOCKED_SEC）
+        if (blocked()) {
+            // 停写期间【不看门槛，只看时间】：停写本身就意味着估算值在门槛以上
+            // （要么真超 60G、要么盘快满），门槛那条判断这时恒成立，先判它就等于
+            // 每 30 秒全量扫一次目录 —— 这条限频就是白写的（实测踩过：停写后
+            // 删掉文件 30 秒就恢复了，而设计上该是 120 秒）。
+            // 恢复延迟最多 RESCAN_BLOCKED_SEC，而清理脚本本身也是一小时才跑一次，
+            // 这点延迟无所谓；换来停写期间不再拿几万个文件的 stat 去打 eMMC。
+            due = !_scanned ||
+                  std::chrono::duration<double>(now - _lastScan).count() >= RESCAN_BLOCKED_SEC;
+        } else if (!_scanned || _scanBytes + _writtenSinceScan >= RESCAN_AT_BYTES) {
             due = true;
         }
         if (due) {
