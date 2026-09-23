@@ -127,12 +127,23 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
     return sp;
 }
 
+// ---- 右侧面板宽度 ----
+// 全文件所有「放不下 / 放得下」的宽度账都按这两个数算，改宽度只改这里，别去追注释里
+// 的数字（以前是散在七八条注释里的 360/380，改一次宽度就得挨个改，漏一条就成假注释）。
+// 2026-09-23 从 360/380 加宽到 420/440：从左边图像区挤 60px 过来，让「标签+两个输入框」
+// 那几行松快些（死节那行原本只剩 ~30px 余量，再加一个字就贴边）。
+// ⚠ 加宽【不省高度】：这些行本来就是一行一个 QHBoxLayout、不换行，宽度富余多少都不影响
+//   纵向高度。想少滚动得把行排成两列（那是另一件事），不是靠这里。
+// panel 比 scroll 窄 20px：scroll 里得给竖直滚动条留位置，一点不留会被压出横向滚动条。
+static constexpr int PANEL_W  = 420;
+static constexpr int SCROLL_W = 440;
+
 // 一行里两个输入框【共用一个】标签 —— 死节那行专用：左边数量、右边尺寸门槛。
 // 跟 addSpinRowPair 的区别是那个给两个框各配一个标签；这里第二个框不配标签，
 // 靠 prefix/suffix 自己说明（显示成 ">30 mm"），省下的宽度留给主标签。
-// 宽度账（面板固定 360px，分组框内宽 ~342px）：
+// 宽度账（面板 PANEL_W=420，分组框内宽 ~402px）：
 //   "死节(dongba)数量大于" ~136px + "2 个" ~70px + ">30 mm" ~87px + 两道间距 16px ≈ 309px，
-//   余 ~30px。再加一个字（比如中间的「且」）就贴边了，别往这行塞字。
+//   余 ~93px。这笔余量是留给以后改动的，不是让人往这行塞字的 —— 塞之前先重算。
 static void addSpinRowTwoBoxes(const QString& name,
                                int lo1, int hi1, int def1, const QString& suffix1,
                                int lo2, int hi2, int def2,
@@ -221,14 +232,20 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _image->setText(QString::fromUtf8("等待图像…"));
     root->addWidget(_image, 3);
 
-    // ---- 右: 操作面板（放滚动区，工人设置行多了/屏幕矮时能滚动，不裁掉底部按钮） ----
+    // ---- 右: 操作面板 ----
+    // 右列分两层：上面是滚动区（只装设置项），下面钉着按钮行。
+    // 原先只有一层(全塞在滚动区里)，设置项一多关机/重启就被顶到可视区外面 —— 分层
+    // 的理由见下面 btnRow 那段。结论：设置项多高都不该把关机/重启顶出屏幕。
+    auto* rightCol = new QVBoxLayout;
+    rightCol->setSpacing(10);
+
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
-    scroll->setFixedWidth(380);
+    scroll->setFixedWidth(SCROLL_W);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setStyleSheet("QScrollArea{background:transparent;}");
     auto* panel = new QWidget;
-    panel->setFixedWidth(360);
+    panel->setFixedWidth(PANEL_W);
     auto* v = new QVBoxLayout(panel);
     v->setSpacing(8);
 
@@ -293,7 +310,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* grpSet = new QGroupBox(QString::fromUtf8("工人设置"), panel);
     auto* lSet   = new QVBoxLayout(grpSet);
     // 七个类的数量阈值 —— 竖排成一列
-    // (并排放不下: 面板固定 360px, 每个「标签+输入框」约 150px, 三个就要 466px)
+    // (并排放不下: 面板宽 PANEL_W=420, 每个「标签+输入框」约 150px, 三个就要 466px)
     // 活节 = 节扣发白、按不掉, 不影响使用; 死节 = 节扣没掉但一按就掉
     // 括号里的拼音是模型/日志里那个类的名字(labels.txt、推理日志、图上画的都是它)，
     // 现场排查时不用再猜「活节对应哪个英文名」。
@@ -303,7 +320,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 当天全改成了这个形状（为什么改见 postprocessor.cpp 的函数头注释）。
     // 两半是同一条规则的上下游：先按尺寸筛掉小的，再数个数，缺一个都没意义。
     // 右框显示成 ">30 mm" 是拿 prefix 拼的，不用再加一个「且大于」的标签占宽度
-    // （那 3 个字正好把这行顶到面板边上，加不下，宽度账见 addSpinRowTwoBoxes）。
+    // （宽度账见 addSpinRowTwoBoxes —— 面板加宽前这行只剩 ~30px 余量，加不下那 3 个字；
+    //   现在 PANEL_W 给到 420 有余量了，但没必要加，符号比多一个标签清楚）。
     addSpinRowTwoBoxes(QString::fromUtf8("死节(dongba)数量大于"),
                        0, 50, 2, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
@@ -374,12 +392,12 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* grpCam = new QGroupBox(QString::fromUtf8("相机调参"), panel);
     auto* lCam   = new QVBoxLayout(grpCam);
     // 曝光/增益并成一行省纵向空间。单位写死在标签里（不用 suffix）：两个框各带后缀
-    // 会把宽度撑开，360px 的面板放不下两列。
+    // 会把宽度撑开，面板宽 PANEL_W 放不下两列。
     // 上限 24dB 是 MV-CS050-60GC 的标称增益范围(0~24dB, V5 高满阱模式只有 12.8)。
     // 原先写死的 30 没有任何出处, 提示里那句 0-300 更离谱, 一起对齐到这里。
     addSpinRowPair(QString::fromUtf8("曝光(us)"), 0, 100000, 6000, "", &_expoSpin,
                    QString::fromUtf8("增益(dB)"), 0, 24, 0, "", &_gainSpin, lCam);
-    // 增益提示单独占一行: 面板固定 360px, 这么长的说明塞进标签会被挤没
+    // 增益提示单独占一行: 面板宽 PANEL_W, 这么长的说明塞进标签会把输入框挤没
     auto* gainHint = new QLabel(
         QString::fromUtf8("（增益范围0-24，0 是默认；除非太暗，否则不要动默认 0）"), grpCam);
     gainHint->setWordWrap(true);
@@ -453,21 +471,27 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
         _resultRow->setVisible(_saveChk->isChecked());
     });
 
-    // 操作按钮：四个并成一行。
-    // 原先是两行两列(拍照/退出、关机/重启)，两行约 100px；并成一行约 42px，
-    // 省下的 ~58px 正好盖住整列超屏的那点(1080 屏估算差 30px 上下)。
+    // 操作按钮：四个并成一行，钉在右列最底下 —— 注意是在【滚动区外面】。
+    // 原先这行是加进 panel 的，也就是在 QScrollArea 里面：设置项一多、整列超过屏幕高，
+    // 关机/重启就滑到可视区底下去了，得先拖滚动条才够得着(注释里说的「不裁掉」只是
+    // 「滚得到」，不等于「看得见」)。挪到滚动区外面之后，上面内容多高都跟它无关，
+    // 永远贴在屏幕底 —— 而这两个键恰恰是全界面最不能猜错、最不该要人找的。
+    // 并成一行(而不是两行两列)是上一版为省高度做的，跟这件事无关，保留：
+    // 一行约 42px、两行约 100px，省下的 ~58px 还给了滚动区，设置项能少滚一点。
     // 宽度交给 stretch 按字数分配(4字:2字:2字:4字 = 3:2:2:3)，不写死 min-width ——
-    // 写死 130px 的话四个要 520px，360px 面板根本放不下。
+    // 写死 130px 的话四个要 520px，右列宽 SCROLL_W 根本放不下。
     // 实测每键约 90/60/60/90px 宽、42px 高，鼠标点是够用的。
     // 不用图标: emoji 在 Jetson 上没装 Noto Color Emoji 会显示成方框，
     // 而「关机/重启」画成电源/回转箭头是全界面最不能猜错的两个键 —— 猜错就是直接断电。
     auto* btnRow = new QHBoxLayout;
     btnRow->setSpacing(6);
-    auto* snap = new QPushButton(QString::fromUtf8("手动拍照"), panel);
+    // 父窗口给 this 而不是 panel：它们马上要被放进 rightCol(挂在 this 上)，
+    // 再挂在 panel 底下只会被 Qt 重新认领一次，写清楚省得看的人以为按钮还在面板里。
+    auto* snap = new QPushButton(QString::fromUtf8("手动拍照"), this);
     snap->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:white;"
                           "background:#2e8b57; border-radius:6px;"));
-    auto* exit = new QPushButton(QString::fromUtf8("退出"), panel);
+    auto* exit = new QPushButton(QString::fromUtf8("退出"), this);
     exit->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:white;"
                           "background:#c0392b; border-radius:6px;"));
@@ -476,21 +500,26 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 拍照/退出 与 关机/重启 之间留一道空档：同处一行后全靠这点间距分组，
     // 没有它「退出」和「关机」会挨着，误触代价不小。
     btnRow->addSpacing(16);
-    auto* shutdownBtn = new QPushButton(QString::fromUtf8("关机"), panel);
+    auto* shutdownBtn = new QPushButton(QString::fromUtf8("关机"), this);
     shutdownBtn->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:#ffd2d2;"
                           "background:#7a1f1f; border-radius:6px;"));
-    auto* rebootBtn = new QPushButton(QString::fromUtf8("重启电脑"), panel);
+    auto* rebootBtn = new QPushButton(QString::fromUtf8("重启电脑"), this);
     rebootBtn->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:#ffd2d2;"
                           "background:#6b4a1f; border-radius:6px;"));
     btnRow->addWidget(shutdownBtn, 2);
     btnRow->addWidget(rebootBtn, 3);
-    v->addLayout(btnRow);
+    // panel 里留一条弹簧：设置项比滚动区矮时把内容顶到上边，不居中飘着
     v->addStretch(1);
 
+    // 右列组装：上=滚动区(吃掉全部余高)，下=按钮行(固定高度，永远可见)。
+    // 顺序就是上下顺序，addWidget 的第二个参数是伸缩比例：滚动区 1、按钮行 0。
+    // ⚠ 以后往 panel 里加东西不用再担心把关机键顶下去 —— 加多少都在滚动区里面。
     scroll->setWidget(panel);
-    root->addWidget(scroll, 0);
+    rightCol->addWidget(scroll, 1);
+    rightCol->addLayout(btnRow, 0);
+    root->addLayout(rightCol, 0);
 
     // 深色工业风主题
     setStyleSheet(QString::fromUtf8(R"(
