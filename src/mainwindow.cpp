@@ -127,6 +127,42 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
     return sp;
 }
 
+// 一行里两个输入框【共用一个】标签 —— 死节那行专用：左边数量、右边尺寸门槛。
+// 跟 addSpinRowPair 的区别是那个给两个框各配一个标签；这里第二个框不配标签，
+// 靠 prefix/suffix 自己说明（显示成 ">30 mm"），省下的宽度留给主标签。
+// 宽度账（面板固定 360px，分组框内宽 ~342px）：
+//   "死节(dongba)数量大于" ~136px + "2 个" ~70px + ">30 mm" ~87px + 两道间距 16px ≈ 309px，
+//   余 ~30px。再加一个字（比如中间的「且」）就贴边了，别往这行塞字。
+static void addSpinRowTwoBoxes(const QString& name,
+                               int lo1, int hi1, int def1, const QString& suffix1,
+                               int lo2, int hi2, int def2,
+                               const QString& prefix2, const QString& suffix2,
+                               QSpinBox** out1, QSpinBox** out2, QVBoxLayout* lay) {
+    auto* box = new QWidget;
+    auto* row = new QHBoxLayout(box);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(8);
+
+    auto* lbl = new QLabel(name);
+    lbl->setStyleSheet("color:#c8c8c8;");
+    auto* sp1 = new QSpinBox;
+    sp1->setRange(lo1, hi1);
+    sp1->setValue(def1);
+    if (!suffix1.isEmpty()) sp1->setSuffix(suffix1);
+    auto* sp2 = new QSpinBox;
+    sp2->setRange(lo2, hi2);
+    sp2->setValue(def2);
+    if (!prefix2.isEmpty()) sp2->setPrefix(prefix2);
+    if (!suffix2.isEmpty()) sp2->setSuffix(suffix2);
+
+    row->addWidget(lbl, 1);
+    row->addWidget(sp1);
+    row->addWidget(sp2);
+    lay->addWidget(box);
+    if (out1) *out1 = sp1;
+    if (out2) *out2 = sp2;
+}
+
 // 一行横排两个输入框（省纵向空间），单位用 spinbox 后缀显示
 static void addSpinRowPair(const QString& name1, int lo1, int hi1, int def1,
                            const QString& unit1, QSpinBox** out1,
@@ -159,26 +195,6 @@ static void addSpinRowPair(const QString& name1, int lo1, int hi1, int def1,
     lay->addWidget(box);
     if (out1) *out1 = sp1;
     if (out2) *out2 = sp2;
-}
-
-// 单个 QDoubleSpinBox 行（支持小数，比如 0.5%）
-static QDoubleSpinBox* addSpinRowD(const QString& name, double lo, double hi, double def,
-                                   const QString& unit, QVBoxLayout* lay) {
-    auto* box = new QWidget;
-    auto* row = new QHBoxLayout(box);
-    row->setContentsMargins(0, 0, 0, 0);
-    auto* lbl = new QLabel(name);
-    lbl->setStyleSheet("color:#c8c8c8;");
-    auto* sp = new QDoubleSpinBox;
-    sp->setRange(lo, hi);
-    sp->setDecimals(1);        // 一位小数
-    sp->setSingleStep(0.5);    // 步进 0.5，支持 0.5%
-    sp->setValue(def);
-    if (!unit.isEmpty()) sp->setSuffix(unit);
-    row->addWidget(lbl, 1);
-    row->addWidget(sp);
-    lay->addWidget(box);
-    return sp;
 }
 
 static void setLed(QLabel* led, bool on) {
@@ -276,37 +292,66 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 工人设置
     auto* grpSet = new QGroupBox(QString::fromUtf8("工人设置"), panel);
     auto* lSet   = new QVBoxLayout(grpSet);
-    // 活节/死节/小油疤 数量阈值 —— 竖排成一列
-    // (并排放不下三个: 面板固定 360px, 每个「6字标签+输入框」约 150px, 三个要 466px)
+    // 七个类的数量阈值 —— 竖排成一列
+    // (并排放不下: 面板固定 360px, 每个「标签+输入框」约 150px, 三个就要 466px)
     // 活节 = 节扣发白、按不掉, 不影响使用; 死节 = 节扣没掉但一按就掉
     // 括号里的拼音是模型/日志里那个类的名字(labels.txt、推理日志、图上画的都是它)，
     // 现场排查时不用再猜「活节对应哪个英文名」。
     _jiebaSpin  = addSpinRow(QString::fromUtf8("活节(jieba)数量大于"), 0, 50, 10, lSet);
-    _dongbaSpin = addSpinRow(QString::fromUtf8("死节(dongba)数量大于"), 0, 50, 2, lSet);
-    // 小油疤(黑色油滴到板上, 板子不碎) 数量阈值 —— 数量 > 此值判 NG
+    // 死节/破洞/缺边/树皮/发白 五行是同一个形状：左边数量阈值、右边尺寸门槛。
+    // 2026-09-23 现场定的 —— 除了死节本来就是数量规则，另外四个原本走【面积和占比】，
+    // 当天全改成了这个形状（为什么改见 postprocessor.cpp 的函数头注释）。
+    // 两半是同一条规则的上下游：先按尺寸筛掉小的，再数个数，缺一个都没意义。
+    // 右框显示成 ">30 mm" 是拿 prefix 拼的，不用再加一个「且大于」的标签占宽度
+    // （那 3 个字正好把这行顶到面板边上，加不下，宽度账见 addSpinRowTwoBoxes）。
+    addSpinRowTwoBoxes(QString::fromUtf8("死节(dongba)数量大于"),
+                       0, 50, 2, QString::fromUtf8(" 个"),
+                       0, 500, 30, ">", " mm",
+                       &_dongbaSpin, &_dongbaMinLenSpin, lSet);
+    // 小油疤(黑色油滴到板上, 板子不碎) 数量阈值 —— 数量 > 此值判 NG，没有尺寸门槛
     _heibaSpin = addSpinRow(QString::fromUtf8("小油疤(heiba)数量大于"), 0, 500, 24, lSet);
-    // 破洞/缺边面积 —— 竖排两行（原来横排一行省空间，加上拼音后横排放不下了）：
-    // 每个标签 = 4 个汉字(~53px) + "(xxxxxx)" 9 个西文(~63px) ≈ 116px，加一个带 " %" 的
-    // 输入框(~80px) = 196px；横排两列再加两道间距 24px 就是 ~416px，而分组框内宽只有
-    // ~342px —— 差得不远，但现场字体/DPI 一变就是切标签或挤输入框。竖排一行只占 ~196px。
-    _dongbanAreaSpin = addSpinRowD(QString::fromUtf8("破洞(dongban)面积大于"), 0, 100, 0.2, " %", lSet);
-    // 标注备注 —— 紧跟在「破洞面积」下面: 说的是这条规则收哪些缺陷, 放远了就对不上号
-    // (大油疤在 labelme 里也标成 dongban, 所以跟着破洞这条面积规则一起判)
+    addSpinRowTwoBoxes(QString::fromUtf8("破洞(dongban)数量大于"),
+                       0, 500, 2, QString::fromUtf8(" 个"),
+                       0, 500, 30, ">", " mm",
+                       &_dongbanSpin, &_dongbanMinLenSpin, lSet);
+    // 标注备注 —— 紧跟在「破洞」下面: 说的是这条规则收哪些缺陷, 放远了就对不上号
+    // (大油疤在 labelme 里也标成 dongban, 所以跟着破洞一起判)
     auto* holeHint = new QLabel(QString::fromUtf8("（大油疤归到破洞里面）"), grpSet);
     holeHint->setWordWrap(true);
     holeHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(holeHint);
-    _quebianAreaSpin = addSpinRowD(QString::fromUtf8("缺边(quebian)面积大于"), 0, 100, 0.5, " %", lSet);
+    addSpinRowTwoBoxes(QString::fromUtf8("缺边(quebian)数量大于"),
+                       0, 500, 2, QString::fromUtf8(" 个"),
+                       0, 500, 30, ">", " mm",
+                       &_quebianSpin, &_quebianMinLenSpin, lSet);
+    addSpinRowTwoBoxes(QString::fromUtf8("树皮(shupi)数量大于"),
+                       0, 500, 99, QString::fromUtf8(" 个"),
+                       0, 500, 30, ">", " mm",
+                       &_shupiSpin, &_shupiMinLenSpin, lSet);
+    addSpinRowTwoBoxes(QString::fromUtf8("发白(fabai)数量大于"),
+                       0, 500, 99, QString::fromUtf8(" 个"),
+                       0, 500, 30, ">", " mm",
+                       &_fabaiSpin, &_fabaiMinLenSpin, lSet);
+    // 一条提示罩住上面五行，不逐行重复 —— 五行的右边、左边语义完全一样。
+    // 「出厂 99」必须说明，否则工人看到 99 会当成「99 个以内都行」照抄，
+    // 而树皮/发白这两个类现场一个数都没调过，真实标准还没定。
+    auto* gateHint = new QLabel(QString::fromUtf8(
+        "（上面五行的右边 = 直径门槛，按检测框最长边算；填 0 = 不过滤。\n"
+        "没过门槛的照样画框，只是框线颜色暗一档，不算数。\n"
+        "数量填 0 = 一个都不许有；树皮/发白出厂 99 = 实际不判（还没现场调过数，"
+        "别照抄死节的 2））"));
+    gateHint->setWordWrap(true);
+    gateHint->setStyleSheet("color:#909090; font-size:12px;");
+    lSet->addWidget(gateHint);
     // 组合规则: 单类都没超、但两类加起来超了也判 NG（跟上面单类同一个「大于」口径）
-    _jiebaDongbaSpin    = addSpinRow(QString::fromUtf8("活节+死节数量大于"), 0, 100, 6, lSet);
-    _dongbanQuebianSpin = addSpinRowD(QString::fromUtf8("破洞+缺边面积大于"), 0, 100, 0.4, " %", lSet);
+    _jiebaDongbaSpin = addSpinRow(QString::fromUtf8("活节+死节数量大于"), 0, 100, 6, lSet);
     // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG
     // 默认 1200/600 = 整板尺寸本身，即「比整板小就判 NG」（不再是原先的整板一半）
     addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 1200, " mm", &_lenSpin,
                    QString::fromUtf8("板宽小于"), 0, 2000, 600, " mm", &_widSpin, lSet);
     // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示。
     // 两个初值都是 0 —— 也就是「解锁之后默认也不存 OK 板」，要抽样得工程师自己往里填。
-    // 注意：这两个值【没有】持久化（下面那 11 个键里没它俩），所以每次启动都回到 0，
+    // 注意：这两个值【没有】持久化（下面那 17 个键里没它俩），所以每次启动都回到 0，
     // 现场调过也不留（ini 里那个 raw_save_pct 是死键，跟这行没关系）——
     // 要让它记住得另加 load/save + connect。
     _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
@@ -349,11 +394,17 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     QSettings s(QStringLiteral("config.ini"), QSettings::IniFormat);
     _jiebaSpin->setValue(s.value("jieba_max", 10).toInt());
     _dongbaSpin->setValue(s.value("dongba_max", 2).toInt());
+    _dongbaMinLenSpin->setValue(s.value("dongba_min_len_mm", 30).toInt());
     _heibaSpin->setValue(s.value("heiba_max", 24).toInt());
-    _dongbanAreaSpin->setValue(s.value("dongban_area_pct", 0.2).toDouble());
-    _quebianAreaSpin->setValue(s.value("quebian_area_pct", 0.5).toDouble());
+    _dongbanSpin->setValue(s.value("dongban_max_count", 2).toInt());
+    _dongbanMinLenSpin->setValue(s.value("dongban_min_len_mm", 30).toInt());
+    _quebianSpin->setValue(s.value("quebian_max_count", 2).toInt());
+    _quebianMinLenSpin->setValue(s.value("quebian_min_len_mm", 30).toInt());
+    _shupiSpin->setValue(s.value("shupi_max_count", 99).toInt());
+    _shupiMinLenSpin->setValue(s.value("shupi_min_len_mm", 30).toInt());
+    _fabaiSpin->setValue(s.value("fabai_max_count", 99).toInt());
+    _fabaiMinLenSpin->setValue(s.value("fabai_min_len_mm", 30).toInt());
     _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 6).toInt());
-    _dongbanQuebianSpin->setValue(s.value("dongban_quebian_area_pct", 0.4).toDouble());
     _lenSpin->setValue(s.value("min_len_mm", 1200).toInt());
     _widSpin->setValue(s.value("min_wid_mm", 600).toInt());
     _expoSpin->setValue(s.value("exposure_us", 6000).toInt());
@@ -362,16 +413,28 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_max", v); });
     connect(_dongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongba_max", v); });
+    connect(_dongbaMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongba_min_len_mm", v); });
     connect(_heibaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_max", v); });
-    connect(_dongbanAreaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_area_pct", v); });
-    connect(_quebianAreaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("quebian_area_pct", v); });
+    connect(_dongbanSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_max_count", v); });
+    connect(_dongbanMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_min_len_mm", v); });
+    connect(_quebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("quebian_max_count", v); });
+    connect(_quebianMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("quebian_min_len_mm", v); });
+    connect(_shupiSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("shupi_max_count", v); });
+    connect(_shupiMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("shupi_min_len_mm", v); });
+    connect(_fabaiSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_max_count", v); });
+    connect(_fabaiMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_min_len_mm", v); });
     connect(_jiebaDongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_dongba_max", v); });
-    connect(_dongbanQuebianSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_quebian_area_pct", v); });
     connect(_lenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("min_len_mm", v); });
     connect(_widSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -561,11 +624,17 @@ void MainWindow::setSaveBlocked(bool blocked, const QString& why) {
 // ============================================================
 int MainWindow::jiebaMaxCount() const          { return _jiebaSpin->value(); }
 int MainWindow::dongbaMaxCount() const         { return _dongbaSpin->value(); }
+int MainWindow::dongbaMinLenMm() const         { return _dongbaMinLenSpin->value(); }
 int MainWindow::heibaMaxCount() const          { return _heibaSpin->value(); }
-double MainWindow::dongbanAreaPct() const         { return _dongbanAreaSpin->value(); }
-double MainWindow::quebianAreaPct() const         { return _quebianAreaSpin->value(); }
+int MainWindow::dongbanMaxCount() const        { return _dongbanSpin->value(); }
+int MainWindow::dongbanMinLenMm() const        { return _dongbanMinLenSpin->value(); }
+int MainWindow::quebianMaxCount() const        { return _quebianSpin->value(); }
+int MainWindow::quebianMinLenMm() const        { return _quebianMinLenSpin->value(); }
+int MainWindow::shupiMaxCount() const          { return _shupiSpin->value(); }
+int MainWindow::shupiMinLenMm() const          { return _shupiMinLenSpin->value(); }
+int MainWindow::fabaiMaxCount() const          { return _fabaiSpin->value(); }
+int MainWindow::fabaiMinLenMm() const          { return _fabaiMinLenSpin->value(); }
 int MainWindow::jiebaDongbaMaxCount() const    { return _jiebaDongbaSpin->value(); }
-double MainWindow::dongbanQuebianAreaPct() const  { return _dongbanQuebianSpin->value(); }
 int MainWindow::minLengthMm() const            { return _lenSpin->value(); }
 int MainWindow::minWidthMm() const             { return _widSpin->value(); }
 int MainWindow::rawSaveRatioPct() const        { return _rawSpin->value(); }

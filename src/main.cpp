@@ -381,6 +381,27 @@ int main(int argc, char** argv) {
 
             pt.tick("推理");
 
+            // 下发界面上的工人阈值（七个类的数量+尺寸门槛、组合判定、板长板宽）——
+            // 每块板都刷一遍，工人改完下一个板就生效。
+            // ⚠ 必须在 post.process()【之前】：process 里紧接着就调 draw()，而画框的框线颜色
+            //   （没过尺寸门槛的压暗一档）取决于这些门槛。晚一步下发的话，这一板画出来的
+            //   是【上一板】的门槛，工人看到的颜色会慢一板、看着像乱跳。
+            post.setJiebaMaxCount(win.jiebaMaxCount());
+            post.setDongbaMaxCount(win.dongbaMaxCount());
+            post.setDongbaMinLenMm(win.dongbaMinLenMm());
+            post.setHeibaMaxCount(win.heibaMaxCount());
+            post.setDongbanMaxCount(win.dongbanMaxCount());
+            post.setDongbanMinLenMm(win.dongbanMinLenMm());
+            post.setQuebianMaxCount(win.quebianMaxCount());
+            post.setQuebianMinLenMm(win.quebianMinLenMm());
+            post.setShupiMaxCount(win.shupiMaxCount());
+            post.setShupiMinLenMm(win.shupiMinLenMm());
+            post.setFabaiMaxCount(win.fabaiMaxCount());
+            post.setFabaiMinLenMm(win.fabaiMinLenMm());
+            post.setJiebaDongbaMaxCount(win.jiebaDongbaMaxCount());
+            post.setMinLengthMm(win.minLengthMm());
+            post.setMinWidthMm(win.minWidthMm());
+
             // 后处理 + 画框
             cv::Size sz(img.cols, img.rows);
             auto defects = post.process(res, img, sz);
@@ -397,16 +418,7 @@ int main(int argc, char** argv) {
 
             pt.tick("测量");
 
-            // NG 判定：用界面输入的工人阈值（jieba/dongba 数量、dongban/quebian 面积、组合判定）
-            post.setJiebaMaxCount(win.jiebaMaxCount());
-            post.setDongbaMaxCount(win.dongbaMaxCount());
-            post.setHeibaMaxCount(win.heibaMaxCount());
-            post.setDongbanAreaRatio(win.dongbanAreaPct() / 100.0f);
-            post.setQuebianAreaRatio(win.quebianAreaPct() / 100.0f);
-            post.setJiebaDongbaMaxCount(win.jiebaDongbaMaxCount());
-            post.setDongbanQuebianAreaRatio(win.dongbanQuebianAreaPct() / 100.0f);
-            post.setMinLengthMm(win.minLengthMm());
-            post.setMinWidthMm(win.minWidthMm());
+            // NG 判定：阈值已经在上面（process 之前）下发过了，这里只判
             std::string ng_reason;
             // 尺寸判定用测量出的长/宽（未测到传 0，不判尺寸 NG）
             float len_mm = measure.valid ? measure.long_mm : 0.0f;
@@ -414,7 +426,7 @@ int main(int argc, char** argv) {
             // ng_size_only 由 isNG 顺手带出来：这块板 NG 只因为板长/板宽不够、
             // 缺陷规则一条都没触发 —— 这种板不存图，见下面存图段
             bool ng_size_only = false;
-            bool is_ng = post.isNG(defects, sz, len_mm, wid_mm, ng_reason, &ng_size_only);
+            bool is_ng = post.isNG(defects, len_mm, wid_mm, ng_reason, &ng_size_only);
             if (is_ng) ng_total++;
             total++;
 

@@ -7,7 +7,6 @@
 
 class QLabel;
 class QSpinBox;
-class QDoubleSpinBox;
 class QCheckBox;
 
 /**
@@ -16,7 +15,8 @@ class QCheckBox;
  * 由检测主循环驱动刷新：
  *   setImage/setResult/setStats/setMeasure/setCycleMs
  *   setGpuTemp/setCpuTemp/setMemoryPct/setDiskPct（系统状态，空闲时刷新）
- * 工人设置（jieba 数量 / 存图比例 / 曝光 / 增益）用 QSpinBox，主循环轮询读取后下发。
+ * 工人设置（各类数量 / 面积占比 / 板长板宽 / 存图比例 / 曝光增益）用 QSpinBox，
+ * 主循环轮询读取后下发。
  * 手动拍照 / 退出 通过按钮置位标志，主循环轮询消费（takeManualTrigger/exitRequested）。
  */
 class MainWindow : public QWidget {
@@ -46,13 +46,21 @@ public:
     void setSaveBlocked(bool blocked, const QString& why = QString());
 
     // ---- 工人设置（主循环轮询读取） ----
+    // 判定用的 7 个类全是数量规则：*MaxCount 是数量上限，*MinLenMm 是尺寸门槛
+    // （最长边短于此值的不计数，0 = 不过滤）。jieba/heiba 没有门槛这一半。
     int jiebaMaxCount() const;
     int dongbaMaxCount() const;
+    int dongbaMinLenMm() const;
+    int dongbanMaxCount() const;
+    int dongbanMinLenMm() const;
     int heibaMaxCount() const;
-    double dongbanAreaPct() const;
-    double quebianAreaPct() const;
+    int quebianMaxCount() const;
+    int quebianMinLenMm() const;
+    int shupiMaxCount() const;
+    int shupiMinLenMm() const;
+    int fabaiMaxCount() const;
+    int fabaiMinLenMm() const;
     int jiebaDongbaMaxCount() const;
-    double dongbanQuebianAreaPct() const;
     int minLengthMm() const;
     int minWidthMm() const;
     int rawSaveRatioPct() const;
@@ -94,11 +102,17 @@ private:
     QLabel*   _statDisk      = nullptr;
     QSpinBox* _jiebaSpin        = nullptr;
     QSpinBox* _dongbaSpin       = nullptr;
+    QSpinBox* _dongbaMinLenSpin = nullptr;   // 跟 _dongbaSpin 同一行，在右边
     QSpinBox* _heibaSpin        = nullptr;
-    QDoubleSpinBox* _dongbanAreaSpin  = nullptr;
-    QDoubleSpinBox* _quebianAreaSpin  = nullptr;
+    QSpinBox* _dongbanSpin      = nullptr;   // 下面 5 个都跟自己的 *MinLenSpin 同一行
+    QSpinBox* _dongbanMinLenSpin= nullptr;   // （左数量、右门槛），跟 _dongbaSpin 一个样式
+    QSpinBox* _quebianSpin      = nullptr;
+    QSpinBox* _quebianMinLenSpin= nullptr;
+    QSpinBox* _shupiSpin        = nullptr;
+    QSpinBox* _shupiMinLenSpin  = nullptr;
+    QSpinBox* _fabaiSpin        = nullptr;
+    QSpinBox* _fabaiMinLenSpin  = nullptr;
     QSpinBox* _jiebaDongbaSpin  = nullptr;
-    QDoubleSpinBox* _dongbanQuebianSpin = nullptr;
     QSpinBox* _lenSpin          = nullptr;
     QSpinBox* _widSpin          = nullptr;
     QSpinBox* _rawSpin          = nullptr;
