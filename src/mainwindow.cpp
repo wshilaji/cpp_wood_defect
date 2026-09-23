@@ -332,14 +332,14 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 99, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
                        &_fabaiSpin, &_fabaiMinLenSpin, lSet);
-    // 一条提示罩住上面五行，不逐行重复 —— 五行的右边、左边语义完全一样。
-    // 「出厂 99」必须说明，否则工人看到 99 会当成「99 个以内都行」照抄，
-    // 而树皮/发白这两个类现场一个数都没调过，真实标准还没定。
-    auto* gateHint = new QLabel(QString::fromUtf8(
-        "（上面五行的右边 = 直径门槛，按检测框最长边算；填 0 = 不过滤。\n"
-        "没过门槛的照样画框，只是框线颜色暗一档，不算数。\n"
-        "数量填 0 = 一个都不许有；树皮/发白出厂 99 = 实际不判（还没现场调过数，"
-        "别照抄死节的 2））"));
+    // 一条提示罩住上面五行，不逐行重复 —— 五行的左边、右边语义完全一样。
+    // ⚠ 这行必须短，一行就好：整个面板（含最底下的关机/重启）都塞在 QScrollArea 里，
+    //   这里多占一行，底下那排就往下滚一行 —— 而滚出去的偏偏是关机/重启，
+    //   全界面最不能猜错、也最不该要人找的两个键。
+    // 所以面板上只留这两条；「最长边怎么算」「没过门槛照样画框、只是框线暗一档」
+    // 这些解释不再占面板高度。
+    auto* gateHint = new QLabel(
+        QString::fromUtf8("（左边=数量，右边=直径：小于该直径的过滤掉，不算数）"), grpSet);
     gateHint->setWordWrap(true);
     gateHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(gateHint);
