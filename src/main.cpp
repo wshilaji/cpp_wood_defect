@@ -22,6 +22,14 @@
 
 #include <QApplication>
 #include <QString>
+// 下面这几个只给 drawNgReason 用：把 NG 原因(中文)画到结果图上。
+// 不用改 CMake —— QImage/QPainter/QFont 在 QtGui 里，而 CMakeLists 已经链了
+// Qt5::Widgets，它是传递依赖 QtGui/QtCore 的。
+#include <QImage>
+#include <QPainter>
+#include <QFont>
+#include <QFontMetrics>
+#include <QColor>
 
 #include "config.h"
 #include "logger.h"
@@ -201,6 +209,73 @@ static void refreshSysStats() {
 }
 
 // ============================================================
+// NG 原因画到结果图上
+// ============================================================
+// 为什么要在图上再写一遍（界面上明明已经有那行原因了）：
+//   界面上那行原因是一闪而过的 —— 下一块板一来就被冲掉，工人当场看到了，
+//   事后翻 output/result/ 里的 NG 图时看不到。图上虽然能从框的颜色/类名猜个大概，
+//   但「死节>2(30mm以上)」这种具体判据猜不出来，而判据恰恰是回溯时要争的东西。
+//
+// 为什么用 Qt 画而不是 cv::putText：
+//   原因串是中文。cv::putText 只带 Hershey 那套矢量字形，全是 ASCII，汉字进去出来是
+//   方块 —— 是那个函数没有汉字字形，不是 cv::Mat 不能写汉字。cv::Mat 本质上就是一块
+//   字节缓冲，任何能写字节缓冲的库都能往上画。
+//   字体不用另配：界面本来就在显示中文，走的是同一套字体查找，所以界面中文正常
+//   ⇒ 图上中文正常。
+//
+// 实现（关键在 QImage 那个构造函数）：QImage 可以【包住】一块现成的内存
+//   (qimage.h:146 那个收 uchar* + bytesPerLine 的重载)，不自己分配、不拷图。
+//   Format_BGR888 是 3 字节/像素、内存顺序就是 BGR，跟 cv::Mat CV_8UC3 的布局
+//   正好对上，所以 QPainter 画进去 = 直接画在 Mat 上。
+//   ⚠ wrap 不持有像素：只在 bgr 活着的时候有效，别把它传出去。
+//
+// 只画 NG（OK 板不写：文件名已经带 _OK，图上本来也没框）。
+static void drawNgReason(cv::Mat& bgr, const QString& reason) {
+    if (bgr.empty() || bgr.type() != CV_8UC3 || reason.isEmpty()) return;
+
+    QImage wrap(bgr.data, bgr.cols, bgr.rows, (int)bgr.step, QImage::Format_BGR888);
+    if (wrap.isNull()) return;   // 尺寸/行距不合法时 QImage 会构造失败，别硬画
+
+    QPainter p(&wrap);
+    p.setRenderHint(QPainter::TextAntialiasing, true);
+
+    // 字号跟图高走（2048 高时约 30px），换相机分辨率不用回来改这个数
+    int px = bgr.rows / 68;
+    if (px < 12) px = 12;
+    QFont f;                       // 默认字体 = 界面用的那套，中文靠它
+    f.setPixelSize(px);
+    f.setBold(true);
+
+    // 原因串可能很长（死节+破洞+板长好几条串在一起），超宽就整体缩小，
+    // 不让它跑出画面 —— 缩到 10px 还不够宽就让它贴着边，比画到图外面强
+    const int maxw = bgr.cols - 2 * px;
+    int tw = QFontMetrics(f).horizontalAdvance(reason);
+    if (tw > maxw && tw > 0) {
+        int small = px * maxw / tw;
+        if (small < 10) small = 10;
+        f.setPixelSize(small);
+        tw = QFontMetrics(f).horizontalAdvance(reason);
+    }
+    p.setFont(f);
+
+    const QFontMetrics fm(f);
+    const int pad = fm.height() / 3;
+    const int bw  = tw + pad * 2;
+    const int bh  = fm.height() + pad * 2;
+    int bx = bgr.cols - bw - pad * 2;     // 右上角，留一圈边
+    if (bx < 0) bx = 0;
+    const int by = pad * 2;
+
+    // 半透明黑底：木板是浅色的，白字直接压上去看不清（跟左上角统计面板一个做法）
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0, 0, 0, 165));
+    p.drawRoundedRect(bx, by, bw, bh, pad, pad);
+
+    p.setPen(QColor(255, 255, 255));
+    p.drawText(bx + pad, by + pad + fm.ascent(), reason);   // 给的是基线 y
+}
+
+// ============================================================
 // 主函数
 // ============================================================
 int main(int argc, char** argv) {
@@ -360,10 +435,13 @@ int main(int argc, char** argv) {
 
             pt.tick("拍照");
 
-            // OK 板的抽样比例（只有开发者模式才看这个）。NG 板一律全存，不吃这个开关，
-            // 见下面判完 NG 之后的推送处。
-            const int ok_raw_pct = win.saveEnabled() ? win.rawSaveRatioPct()    : 0;
-            const int ok_res_pct = win.saveEnabled() ? win.resultSaveRatioPct() : 0;
+            // OK 板的抽样比例。开发者模式【没开】时用配置里的基线(默认 1/10)，开了就以
+            // 界面上那两行为准。NG 板一律全存，不吃这个比例，见下面判完 NG 之后的推送处。
+            // 基线的原始图/结果图取的是【同一个】Config::OK_SAVE_PCT —— 故意的：抽中的板
+            // 要两张一起落盘（共用 board_id，成对才说得清是哪块板），比例同源才能保证两条
+            // 抽样的计数同进同出、永远落在同一块板上。
+            const int ok_raw_pct = win.saveEnabled() ? win.rawSaveRatioPct()    : Config::OK_SAVE_PCT;
+            const int ok_res_pct = win.saveEnabled() ? win.resultSaveRatioPct() : Config::OK_SAVE_PCT;
 
             // 必须 clone：原始图要"没画过框"的干净帧，而结果图得等判完 NG 才存。
             // 原先开发者模式是抢在画框【之前】推原始图的（老代码那行在 cv::Mat img = frame
@@ -435,8 +513,39 @@ int main(int argc, char** argv) {
 
             pt.dump();
 
+            // ---- 刷新界面 ----
+            // ⚠ setImage 必须排在存图【前面】：cvMatToQImage 结尾是 .copy()，界面存的是
+            //    自己的一份深拷贝，所以下面往 img 上画 NG 原因不会改到界面上显示的那张。
+            //    界面要的是干净图 —— 原因那行字界面上本来就有专门的标签，图上不用再写一遍。
+            win.setImage(img);
+            win.setResult(is_ng, QString::fromStdString(ng_reason));
+            win.setStats(total, ng_total);
+            // 系统状态只显示空闲时刷新的缓存值，检测路径零 I/O
+            win.setGpuTemp(g_gpuTemp);
+            win.setCpuTemp(g_cpuTemp);
+            win.setMemoryPct(g_memPct);
+            win.setDiskPct(g_diskPct);
+            if (measure.valid) win.setMeasure(measure.long_mm, measure.short_mm);
+            win.setCycleMs(pt.elapsed());
+
+            // 统计
+            fps.add(pt.elapsed());
+
+            if (total % 50 == 0)
+                LOGI << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
+                     << " | 检测:" << total << " | NG:" << ng_total;
+
+            // NG 原因写进结果图右上角 —— 存下来的 NG 图事后翻出来就能看到判据。
+            // 位置是挑过的, 两边理由不同:
+            //   排在 setImage 之后 —— 界面那份是深拷贝, 所以界面拿到的还是干净图
+            //                        (界面上原因另有文字标签, 图上不必再写一遍);
+            //   排在存图之前     —— saver.push 拷的是 img 当时的样子, 之后再画就存不进去了。
+            // 这么排还顺手省掉「为存图单独 clone 一份」—— 不用多拷 15MB。
+            // 只画 NG; 原始图 frame 不碰(那张留给重跑模型/重训, 得保持干净)。
+            if (is_ng) drawNgReason(img, QString::fromStdString(ng_reason));
+
             // ---- 存图 ----
-            //   NG 板 → 原始图(frame，干净) + 结果图(img，带框)，【无条件全存】，
+            //   NG 板 → 原始图(frame，干净) + 结果图(img，带框+NG原因)，【无条件全存】，
             //           不吃开发者模式开关 —— 留档不该依赖谁记得去开那个开关。
             //           例外：ng_size_only（只有板长/板宽不够、缺陷规则一条都没触发）的
             //           板不存 —— 尺寸判的是板的规格不是板面质量，图留着也查不出什么，
@@ -462,25 +571,6 @@ int main(int argc, char** argv) {
             }
             // 停写提示带上原因（磁盘不足 / 目录超 60G），现场看提示就知道该清哪儿
             win.setSaveBlocked(saver.blocked(), QString::fromUtf8(saver.blockedReason()));
-
-            // ---- 刷新界面 ----
-            win.setImage(img);
-            win.setResult(is_ng, QString::fromStdString(ng_reason));
-            win.setStats(total, ng_total);
-            // 系统状态只显示空闲时刷新的缓存值，检测路径零 I/O
-            win.setGpuTemp(g_gpuTemp);
-            win.setCpuTemp(g_cpuTemp);
-            win.setMemoryPct(g_memPct);
-            win.setDiskPct(g_diskPct);
-            if (measure.valid) win.setMeasure(measure.long_mm, measure.short_mm);
-            win.setCycleMs(pt.elapsed());
-
-            // 统计
-            fps.add(pt.elapsed());
-
-            if (total % 50 == 0)
-                LOGI << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
-                     << " | 检测:" << total << " | NG:" << ng_total;
 
         }
 
