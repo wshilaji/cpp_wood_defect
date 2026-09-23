@@ -34,7 +34,9 @@ public:
               bool* size_only = nullptr) const;
     void draw(cv::Mat& frame, const std::vector<Defect>& defects);
 
-    /** 画左上角统计面板：类别数 + 各类框数（没有面积行了——见 isNG 上面那段） */
+    /** 画左上角统计面板：类别数 + 各类框数。有尺寸门槛的类写成「算数/全部」
+     *  （dongba 2/4 = 画了 4 个框、其中 2 个过了门槛），没门槛的写 xN。
+     *  （没有面积行了——见 isNG 上面那段） */
     void drawSummary(cv::Mat& frame, const std::vector<Defect>& defects);
 
     // ---- 工人可调阈值（运行时可改，界面输入框控制；每块板由 main.cpp 下发）----

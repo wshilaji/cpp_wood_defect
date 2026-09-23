@@ -237,14 +237,20 @@ void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {
 void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defects) {
     if (frame.empty()) return;
 
-    // 按类别统计框数。
-    // 注意：这里数的是【画出来的框】，不过尺寸门槛的小块也数在里面 —— 面板的字面意思
-    // 就是「这帧里这个类有几个框」，跟 isNG 数的那份（过了门槛的）故意不是一回事：
-    // 工人是对着图数的，图上画了几个框面板就该说几个，对不上才是问题。
+    // 按类别统计两个数：
+    //   cnt   —— 画出来的框数（不过尺寸门槛的小块也在内：工人是对着图数的，
+    //            图上画了几个框，面板就该能对上几个）
+    //   gated —— 其中过了尺寸门槛的，也就是 isNG 真正数进去的那些
+    // 两个数都要报（有门槛的类显示成 gated/cnt）。只报 cnt 会出这种画面：面板写
+    // 「dongba x4」、工人数着 4 > 2 觉得该判 NG、板子却是 OK（判定只数了其中 2 个
+    // 大的）—— 看着就像程序坏了。报了两个数，2/4 自己就把话说清楚了。
+    // 过不过门槛走 countsTowardRule，跟 isNG / draw 同一处口径，不另写条件。
     std::vector<int> cnt(_classes.size(), 0);
+    std::vector<int> gated(_classes.size(), 0);
     for (const auto& d : defects) {
         if (d.cls_id < 0 || d.cls_id >= (int)_classes.size()) continue;
         cnt[d.cls_id]++;
+        if (countsTowardRule(d)) gated[d.cls_id]++;
     }
 
     // 面板行 + 每行文字颜色(跟随对应类别框的颜色)。
@@ -260,7 +266,16 @@ void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defec
         // 在 CLASSES 里但旧模型只有 14 类)、或者这次图上一个都没检出时, 面板会挂一行
         // 恒为 0 的记录, 工人看了会以为模型在识别这个类。
         if (cnt[i] == 0) continue;
-        lines.push_back("  " + _classes[i] + " x" + std::to_string(cnt[i]));
+        std::string line = "  " + _classes[i] + " ";
+        if (sizeGateMm(_classes[i]) > 0)
+            // 有尺寸门槛的类：「算数/全部」。dongba 2/4 = 画了 4 个框，其中 2 个
+            // 过了 30mm（判定就按 2 个数）。全过的时候写 4/4 而不省略 —— 形状固定，
+            // 工人不用去猜这次是哪种写法。
+            line += std::to_string(gated[i]) + "/" + std::to_string(cnt[i]);
+        else
+            // 没门槛的类两个数永远相等，写 x4 就够了
+            line += "x" + std::to_string(cnt[i]);
+        lines.push_back(line);
         colors.push_back(classColor(_classes[i]));                   // 同框色
     }
 
