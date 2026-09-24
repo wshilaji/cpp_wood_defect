@@ -11,6 +11,10 @@
 #include <QCheckBox>
 #include <QPixmap>
 #include <QImage>
+#include <QPainter>
+#include <QFont>
+#include <QColor>
+#include <QRect>
 #include <QMessageBox>
 #include <QProcess>
 #include <QSettings>
@@ -127,6 +131,20 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
     return sp;
 }
 
+// ---- 左下角「最近结果」缩略图条 ----
+// 每张缩略图的大小(px)和张数。宽度账（1920×1080 全屏时左边这列可用宽 ~1450px）：
+//   6 张 × 200 + 5 道间距 6 = 1230px，余 ~220px。
+// 为什么是 6 而不是更多：缩略图要能放下一个「大大的 OK/NG」——200px 宽时色带约 55px
+// 高、字约 33px，站远一点扫一眼就看见；掉到 130px 宽那个字只剩 21px，就得凑近看，
+// 反而失去了「一眼扫过去」这个功能本来的意义。要更长的一条可以加张数，但每加一张
+// 那 200px 是从图高里出的（横条越高，上面的木板图越小）。
+// ⚠ 这三个数改小/改大都不用动别处：pushThumb 按 THUMB_W×THUMB_H 缩，格子按 THUMB_COUNT
+//   建。但张数别超过「可用宽 / (THUMB_W + 间距)」——超了横条会把左边的木板图挤窄。
+static constexpr int THUMB_W     = 200;
+static constexpr int THUMB_H     = 167;   // 跟 2448×2048 同比例(1.195:1)
+static constexpr int THUMB_COUNT = 6;
+static constexpr int THUMB_GAP   = 6;
+
 // ---- 右侧面板宽度 ----
 // 全文件所有「放不下 / 放得下」的宽度账都按这两个数算，改宽度只改这里，别去追注释里
 // 的数字（以前是散在七八条注释里的 360/380，改一次宽度就得挨个改，漏一条就成假注释）。
@@ -224,13 +242,65 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     root->setContentsMargins(10, 10, 10, 10);
     root->setSpacing(10);
 
-    // ---- 左: 图像显示区 ----
+    // ---- 左: 图像显示区 + 底下的「最近结果」条 ----
+    auto* leftCol = new QVBoxLayout;
+    leftCol->setSpacing(8);
+
     _image = new QLabel(this);
     _image->setAlignment(Qt::AlignCenter);
     _image->setMinimumSize(960, 720);
     _image->setStyleSheet("background:#050505; border:1px solid #2a2a2a;");
     _image->setText(QString::fromUtf8("等待图像…"));
-    root->addWidget(_image, 3);
+    leftCol->addWidget(_image, 1);   // 伸缩比 1：余下的高度全给图，横条只占自己那点
+
+    // 「最近结果」条：THUMB_COUNT 个固定格子，最新的放最右，每来一块整体左移一格。
+    // 格子一开始就全部建好（空的画成深色占位），而不是来一块加一个 —— 动态增删控件会让
+    // 布局反复重算，格子也会在补齐之前左右跳。空着的时候看得到 6 个暗框，工人一眼就
+    // 知道这里是「最近 6 块」，不用等第一块板来才知道这块地方是干嘛的。
+    auto* thumbBox = new QWidget(this);
+    auto* thumbCol = new QVBoxLayout(thumbBox);
+    thumbCol->setContentsMargins(0, 0, 0, 0);
+    thumbCol->setSpacing(4);
+    // 小标题：不写的话一排小图不知道哪头新、也不知道会留几块
+    auto* thumbTitle = new QLabel(QString::fromUtf8("最近结果（右→新）"), thumbBox);
+    thumbTitle->setStyleSheet("color:#909090; font-size:12px;");
+    thumbCol->addWidget(thumbTitle);
+
+    // 空格子的占位图。用 QPixmap 而不是 QLabel 的文字(「—」)：QLabel::setPixmap 内部
+    // 会先 clearContents()，连文字一起清掉 —— 第一块板一来，前面几个格子的「—」就没了、
+    // 只剩空框。占位图跟真缩略图走同一条路（都是 setPixmap），就不会有这种不一致。
+    // 6 个格子共用这一张：QPixmap 是隐式共享的，只占一份 ~130KB。
+    QPixmap placeholder(THUMB_W, THUMB_H);
+    placeholder.fill(QColor(0x0c, 0x0f, 0x13));
+    {
+        QPainter p(&placeholder);
+        p.setPen(QColor(0x3a, 0x41, 0x4b));
+        QFont f;
+        f.setPixelSize(20);
+        p.setFont(f);
+        p.drawText(QRect(0, 0, THUMB_W, THUMB_H), Qt::AlignCenter, QString::fromUtf8("—"));
+    }
+
+    auto* thumbRow = new QHBoxLayout;
+    thumbRow->setContentsMargins(0, 0, 0, 0);
+    thumbRow->setSpacing(THUMB_GAP);
+    for (int i = 0; i < THUMB_COUNT; ++i) {
+        auto* t = new QLabel(thumbBox);
+        t->setFixedSize(THUMB_W, THUMB_H);
+        t->setAlignment(Qt::AlignCenter);
+        t->setStyleSheet("background:#0c0f13; border:1px solid #2a2a2a;");
+        t->setPixmap(placeholder);
+        thumbRow->addWidget(t);
+        _thumbs.push_back(t);
+        _thumbPix.push_back(placeholder);   // 隐式共享：6 份只占一张的内存
+    }
+    // 弹簧放最后：格子从左边排起，右边剩下的 220px 留白。不居中的理由跟左上角统计
+    // 面板一样 —— 固定从左起，位置不随窗口宽度变，看惯了不用重新找。
+    thumbRow->addStretch(1);
+    thumbCol->addLayout(thumbRow);
+    leftCol->addWidget(thumbBox, 0);
+
+    root->addLayout(leftCol, 3);
 
     // ---- 右: 操作面板 ----
     // 右列分两层：上面是滚动区（只装设置项），下面钉着按钮行。
@@ -566,6 +636,54 @@ void MainWindow::setImage(const cv::Mat& bgr) {
     if (img.isNull()) return;
     _lastImage = std::move(img);
     updateImageDisplay();
+}
+
+void MainWindow::pushThumb(const cv::Mat& result, bool ok) {
+    if (_thumbs.empty() || result.empty() || result.type() != CV_8UC3) return;
+
+    // 先缩再转。反过来（先转成 QImage 再缩）是白拷一份 15MB —— cvMatToQImage 结尾有
+    // .copy()，而缩完只有 200×167（~130KB）。
+    // INTER_AREA 是下采样该用的滤波：直接抽点(INTER_NEAREST)会把板上的框线糊成噪点，
+    // 而框线恰恰是缩略图里除了 OK/NG 之外唯一还看得出来的信息。实测这步约 1~2ms。
+    cv::Mat small;
+    cv::resize(result, small, cv::Size(THUMB_W, THUMB_H), 0, 0, cv::INTER_AREA);
+    QImage img = cvMatToQImage(small);   // 这份是深拷贝，下面可以随便画
+    if (img.isNull()) return;
+
+    // 那个大大的 OK/NG：画在【顶部】一条带上，不铺满整张 —— 铺满就把木板盖掉了，
+    // 而「哪边有缺陷、框集中在哪」是缩略图里第二件要看的东西（第一件是 OK 还是 NG）。
+    // 色带占图高三分之一，字占色带五分之三（200×167 时约 55px 带、33px 字）。
+    {
+        QPainter p(&img);
+        p.setRenderHint(QPainter::TextAntialiasing, true);
+        const int bandH = img.height() / 3;
+
+        p.setPen(Qt::NoPen);
+        // 跟右侧判定结果块同一套颜色（OK 绿 #2e8b57 / NG 红 #c0392b），略透明：
+        // 压得住木板，又还能看出这块板长什么样。
+        p.setBrush(ok ? QColor(46, 139, 87, 235) : QColor(192, 57, 43, 235));
+        p.drawRect(0, 0, img.width(), bandH);
+
+        QFont f;
+        f.setPixelSize(bandH * 3 / 5);
+        f.setBold(true);
+        p.setFont(f);
+        p.setPen(Qt::white);
+        p.drawText(QRect(0, 0, img.width(), bandH), Qt::AlignCenter,
+                   ok ? QStringLiteral("OK") : QStringLiteral("NG"));
+    }
+
+    // 整体左移一格，最老的那张被挤出去 —— 挤掉的是下标 0 那份引用，引用计数归零就
+    // 自动释放了，不用手动清。
+    // 两个容器一起动，格子里的图和 _thumbPix 始终一一对应。不回读 QLabel 的原因见
+    // mainwindow.h 里 _thumbPix 的注释（QLabel::pixmap() 在 5.15 废弃了）。
+    // QPixmap 隐式共享：这几行只动引用计数、不拷像素，每块板的代价可以忽略。
+    for (int i = 0; i + 1 < THUMB_COUNT; ++i) {
+        _thumbPix[i] = _thumbPix[i + 1];
+        _thumbs[i]->setPixmap(_thumbPix[i]);
+    }
+    _thumbPix[THUMB_COUNT - 1] = QPixmap::fromImage(img);
+    _thumbs[THUMB_COUNT - 1]->setPixmap(_thumbPix[THUMB_COUNT - 1]);
 }
 
 void MainWindow::updateImageDisplay() {

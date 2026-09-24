@@ -3,6 +3,8 @@
 #include <QWidget>
 #include <QString>
 #include <QImage>
+#include <QPixmap>
+#include <vector>
 #include <opencv2/opencv.hpp>
 
 class QLabel;
@@ -25,6 +27,15 @@ public:
 
     // ---- 图像 / 结果 / 统计刷新（主循环调用） ----
     void setImage(const cv::Mat& bgr);
+
+    /** 往左下角「最近结果」那一条上推一张缩略图（最新的排最右，其余整体左移一格）。
+     *  ok = 这块是 OK 还是 NG —— 图上那个大字和色带就是它，不看内容也能一眼扫出走向。
+     *  传的是【结果图】(带框那张)，内部自己缩到小图尺寸（大小见 mainwindow.cpp 的
+     *  THUMB_W/THUMB_H）。
+     *  ⚠ 只留缩略图，不留原图：一张 2448×2048 是 15MB，留 6 张就是 90MB，而缩略图一张
+     *    才 ~130KB。这是这个功能唯一的内存口径，别改成一整条存原图。 */
+    void pushThumb(const cv::Mat& result, bool ok);
+
     void setResult(bool ng, const QString& reason);
     void setStats(quint64 total, quint64 ng);
     void setGpuTemp(double gpu_c);    // GPU 温度（英伟达），负值显示 --
@@ -129,6 +140,14 @@ private:
     QSpinBox* _gainSpin         = nullptr;
     QCheckBox* _saveChk         = nullptr;
     QLabel*    _saveBlocked     = nullptr;
+
+    // 「最近结果」缩略图条：固定几个格子，最新的在最右，每来一块整体左移一格。
+    // 格子数在构造时定死（mainwindow.cpp 的 THUMB_COUNT），这里只用 vector 装。
+    std::vector<QLabel*> _thumbs;
+    // 每个格子里那张图，下标跟 _thumbs 一一对应（一开始全是占位图）。
+    // 自己存一份、不回读 QLabel —— QLabel::pixmap() 那个返回裸指针的重载在 Qt 5.15
+    // 已经标了废弃，而且状态自己拿着比从控件里掏出来清楚，两处也不可能对不上。
+    std::vector<QPixmap> _thumbPix;
 
     QImage    _lastImage;
     bool      _manual = false;

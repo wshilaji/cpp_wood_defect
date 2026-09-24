@@ -519,6 +519,11 @@ int main(int argc, char** argv) {
             //    自己的一份深拷贝，所以下面往 img 上画 NG 原因不会改到界面上显示的那张。
             //    界面要的是干净图 —— 原因那行字界面上本来就有专门的标签，图上不用再写一遍。
             win.setImage(img);
+            // 左下角「最近结果」条。排在这里的理由跟 setImage 一样：得在下面给 NG 图
+            // 画原因【之前】取，缩略图要的是干净结果图。（画在 200px 的小图上那行原因
+            // 也糊得看不清，那个大字 OK/NG 才是小图要传达的。）
+            // 传的是带框的结果图 img（不是原始图 frame）—— 小图上那几个框正是要看的。
+            win.pushThumb(img, !is_ng);
             win.setResult(is_ng, QString::fromStdString(ng_reason));
             win.setStats(total, ng_total);
             // 系统状态只显示空闲时刷新的缓存值，检测路径零 I/O
