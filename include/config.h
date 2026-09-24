@@ -67,12 +67,11 @@ constexpr float SCRATCH_ASPECT  = 5.0f;     // 纹类缺陷长宽比阈值
 //   可以大于 1 个大油疤, 但这两块板该不该扔正好相反。尺寸门槛 + 数量才分得开。
 //
 // 现场 config.ini: jieba_max=10 dongba_max=2 heiba_max=24 quebian_area_pct=0.5
-//                 jieba_dongba_max=6
 //                 (dongba_min_len_mm / dongban_* / shupi_* / fabai_* / quebian_max_count /
-//                  quebian_min_len_mm 是 2026-09-23 新加的键, 现场还没填过, 没有 ini 时
-//                  走下面的出厂默认值。dongban_area_pct / quebian_area_pct /
-//                  dongban_quebian_area_pct 是同一天作废的键, 代码里已经不读 ——
-//                  ini 里还留着不影响任何东西, 不用去清)
+//                  quebian_min_len_mm / dongban_big_* 是 2026-09-23 起新加的键, 现场
+//                  还没填过, 没有 ini 时走下面的出厂默认值。dongban_area_pct /
+//                  quebian_area_pct / dongban_quebian_area_pct / jieba_dongba_max 是作废
+//                  的键, 代码里已经不读 —— ini 里还留着不影响任何东西, 不用去清)
 
 // 出厂值分两档, 区别是「这个类原来在不在判」:
 //   原来就在判的(jieba/dongba/heiba/dongban/quebian) —— 照抄现场调过的数, 或现场那条
@@ -88,6 +87,24 @@ constexpr int   HEIBA_MAX_COUNT  = 24;       // heiba 小油疤:数量 > 此值�
 // 「可以有 2 个 30mm 的洞」—— 口径变了, 上线前得拿现场的板过一遍再定这两个数。
 constexpr int   DONGBAN_MAX_COUNT  = 2;      // dongban 破洞:算数的块数 > 此值判 NG
 constexpr int   DONGBAN_MIN_LEN_MM = 30;     // dongban 门槛(mm):最长边短于此值不计数
+// 破洞的【第二条】数量规则(2026-09-24 现场加的), 现场管它叫【一票否决】——
+// 数的是「直径超过 DONGBAN_BIG_MIN_LEN_MM 的破洞/大油疤」有多少块, 块数超过
+// DONGBAN_BIG_MAX_COUNT 判 NG。
+// 形状跟其他 5 个类完全一样 —— 数量 + 尺寸门槛, 界面同一套输入框, 没有单开一套新逻辑。
+// 「一票否决」说的是它的【用意】不是它的【实现】: 一个 40mm 的大洞比两个 30mm 的严重,
+// 一个就该拦下来, 而上面那条数块数的口径表达不出这件事(1 个 < 2 个, 反而放行)。
+// 跟上面那条(2 个 30mm)是同一个类的两道门槛, 一宽一严:
+//   上面那条管「小的多」—— 允许 2 个 30mm 的洞;
+//   这条管「单块太大」—— 所以数量填得比上面那条小。
+// ⚠ 想让「1 个就判」得把 DONGBAN_BIG_MAX_COUNT 填 0(口径是「大于」, 0 = 超过 0 个 = 至少
+//   1 个), 填 1 是「超过 1 个」= 两个才判。出厂给的是 1。
+// ⚠ 两个门槛各自独立, 但把 BIG_MIN_LEN 调到比 DONGBAN_MIN_LEN_MM 还小时, 这条会去数
+//   一批「上面那条根本不算数」的小块 —— 逻辑上说得通(两条规则各看各的门槛), 但不是现场
+//   那个意思(严格的那条反而更松)。界面上只挡得住 >500 这种越界, 挡不住这种大小关系。
+// 界面上和 NG 原因串里这条规则叫「大破洞或大油疤」—— 大油疤必须带上: 模型里没有
+// 大油疤这个类, 它是并进 dongban 一起标的(见上面类名对照), 所以这条实际管两样东西。
+constexpr int   DONGBAN_BIG_MAX_COUNT  = 1;   // 大破洞或大油疤(一票否决):算数的块数 > 此值判 NG
+constexpr int   DONGBAN_BIG_MIN_LEN_MM = 40;  // 大破洞或大油疤(一票否决)门槛(mm):最长边短于此值不计数
 // quebian 缺边原为「面积和占比 > 0.5%」。0.5% ≈ 158x158px ≈ 一条 87mm 的缺边,
 // 出厂值先跟破洞对齐(2/30), 同样不是等价换算, 上线前要过板。
 constexpr int   QUEBIAN_MAX_COUNT  = 2;      // quebian 缺边:算数的块数 > 此值判 NG
@@ -98,11 +115,13 @@ constexpr int   SHUPI_MAX_COUNT  = 99;       // shupi 树皮:算数的块数 > �
 constexpr int   SHUPI_MIN_LEN_MM = 30;       // shupi 门槛(mm):最长边短于此值不计数
 constexpr int   FABAI_MAX_COUNT  = 99;       // fabai 发白:算数的块数 > 此值判 NG
 constexpr int   FABAI_MIN_LEN_MM = 30;       // fabai 门槛(mm):最长边短于此值不计数
-constexpr int   JIEBA_DONGBA_MAX_COUNT = 6;  // jieba+dongba 数量之和 > 此值判 NG
-// 「dongban+quebian 面积之和占比 > 0.4%」这条组合规则 2026-09-23 现场决定【删掉】:
-// 破洞/缺边都改走数量之后, 这条按面积算的跨类规则没有对应的口径了(个数和面积没法相加)。
-// 单类的两条规则都在(各自按数量), 只是不再有这一条跨类的。原来的常量
+// 「dongban+quebian 面积之和占比 > 0.4%」这条跨类组合规则 2026-09-23 删掉: 破洞/缺边都
+// 改走数量之后, 这条按面积算的没有对应的口径了(个数和面积没法相加)。常量
 // DONGBAN_QUEBIAN_AREA_RATIO 和 ini 键 dongban_quebian_area_pct 一起作废。
+// 「jieba+dongba 数量之和 > 6」这条跨类组合规则 2026-09-24 也删掉(现场定的)。常量
+// JIEBA_DONGBA_MAX_COUNT 和 ini 键 jieba_dongba_max 一起作废。
+// ⇒ 现在【一条跨类组合规则都没有了】: 判定只剩单类数量规则
+//   (7 个类 + 破洞那条更严的第二道 DONGBAN_BIG_*, 即「一票否决」) + 板长/板宽。
 
 // ---- 木板尺寸判定（测量长/宽低于阈值判 NG）----
 // 现场 min_len_mm=1200 / min_wid_mm=600 = 整板尺寸，也就是「比整板小就判 NG」，

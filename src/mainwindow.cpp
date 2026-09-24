@@ -332,9 +332,25 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 2, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
                        &_dongbanSpin, &_dongbanMinLenSpin, lSet);
-    // 标注备注 —— 紧跟在「破洞」下面: 说的是这条规则收哪些缺陷, 放远了就对不上号
+    // 破洞的【第二道】门槛(2026-09-24 现场加的) —— 现场管它叫「一票否决」。
+    // 形状跟上面那行一模一样: 数量 + 尺寸门槛, 不是另开一套逻辑。门槛 40mm 以上的破洞
+    // 算数, 块数超过这里填的数就判 NG。
+    // 跟上面那行是同一个类的两条规则, 一宽一严: 上面那条管「小的多」(允许 2 个 30mm 的),
+    // 这条管「单块太大」—— 一个 40mm 的大洞比两个 30mm 的严重, 而上面那条数块数的口径
+    // 表达不出这件事(1 个 < 2 个, 反而放行)。「一票否决」这个名字说的就是这层意思。
+    // 紧挨着上面那行放: 两条说的都是 dongban, 中间隔开的话工人得来回找。
+    // 「大油疤」写进行名不是啰嗦 —— 见下面那行提示, 大油疤并进 dongban 了, 这条实际管
+    // 破洞 + 大油疤两样, 只写「大破洞」会让人以为大油疤不归它管。
+    addSpinRowTwoBoxes(QString::fromUtf8("大破洞或大油疤数量大于"),
+                       0, 500, 1, QString::fromUtf8(" 个"),
+                       0, 500, 40, ">", " mm",
+                       &_dongbanBigSpin, &_dongbanBigMinLenSpin, lSet);
+    // 标注备注 —— 紧跟在「破洞」这两行下面: 说的是这两条规则收哪些缺陷, 放远了就对不上号
     // (大油疤在 labelme 里也标成 dongban, 所以跟着破洞一起判)
-    auto* holeHint = new QLabel(QString::fromUtf8("（大油疤归到破洞里面）"), grpSet);
+    // 「一票否决」是现场给这条规则起的名字 —— 这句要留在面板上: 一个 40mm 的大洞比两个
+    // 30mm 的严重得多, 光看「数量大于 1」看不出这层意思, 工人会当成「又一个数量规则」。
+    auto* holeHint = new QLabel(
+        QString::fromUtf8("（大破洞或大油疤一票否决；大油疤归到破洞里面）"), grpSet);
     holeHint->setWordWrap(true);
     holeHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(holeHint);
@@ -361,8 +377,6 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     gateHint->setWordWrap(true);
     gateHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(gateHint);
-    // 组合规则: 单类都没超、但两类加起来超了也判 NG（跟上面单类同一个「大于」口径）
-    _jiebaDongbaSpin = addSpinRow(QString::fromUtf8("活节+死节数量大于"), 0, 100, 6, lSet);
     // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG
     // 默认 1200/600 = 整板尺寸本身，即「比整板小就判 NG」（不再是原先的整板一半）
     addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 1200, " mm", &_lenSpin,
@@ -416,13 +430,14 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _heibaSpin->setValue(s.value("heiba_max", 24).toInt());
     _dongbanSpin->setValue(s.value("dongban_max_count", 2).toInt());
     _dongbanMinLenSpin->setValue(s.value("dongban_min_len_mm", 30).toInt());
+    _dongbanBigSpin->setValue(s.value("dongban_big_max_count", 1).toInt());
+    _dongbanBigMinLenSpin->setValue(s.value("dongban_big_min_len_mm", 40).toInt());
     _quebianSpin->setValue(s.value("quebian_max_count", 2).toInt());
     _quebianMinLenSpin->setValue(s.value("quebian_min_len_mm", 30).toInt());
     _shupiSpin->setValue(s.value("shupi_max_count", 99).toInt());
     _shupiMinLenSpin->setValue(s.value("shupi_min_len_mm", 30).toInt());
     _fabaiSpin->setValue(s.value("fabai_max_count", 99).toInt());
     _fabaiMinLenSpin->setValue(s.value("fabai_min_len_mm", 30).toInt());
-    _jiebaDongbaSpin->setValue(s.value("jieba_dongba_max", 6).toInt());
     _lenSpin->setValue(s.value("min_len_mm", 1200).toInt());
     _widSpin->setValue(s.value("min_wid_mm", 600).toInt());
     _expoSpin->setValue(s.value("exposure_us", 6000).toInt());
@@ -439,6 +454,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_max_count", v); });
     connect(_dongbanMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_min_len_mm", v); });
+    connect(_dongbanBigSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_big_max_count", v); });
+    connect(_dongbanBigMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_big_min_len_mm", v); });
     connect(_quebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("quebian_max_count", v); });
     connect(_quebianMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -451,8 +470,6 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_max_count", v); });
     connect(_fabaiMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_min_len_mm", v); });
-    connect(_jiebaDongbaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("jieba_dongba_max", v); });
     connect(_lenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("min_len_mm", v); });
     connect(_widSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -657,13 +674,14 @@ int MainWindow::dongbaMinLenMm() const         { return _dongbaMinLenSpin->value
 int MainWindow::heibaMaxCount() const          { return _heibaSpin->value(); }
 int MainWindow::dongbanMaxCount() const        { return _dongbanSpin->value(); }
 int MainWindow::dongbanMinLenMm() const        { return _dongbanMinLenSpin->value(); }
+int MainWindow::dongbanBigMaxCount() const     { return _dongbanBigSpin->value(); }
+int MainWindow::dongbanBigMinLenMm() const     { return _dongbanBigMinLenSpin->value(); }
 int MainWindow::quebianMaxCount() const        { return _quebianSpin->value(); }
 int MainWindow::quebianMinLenMm() const        { return _quebianMinLenSpin->value(); }
 int MainWindow::shupiMaxCount() const          { return _shupiSpin->value(); }
 int MainWindow::shupiMinLenMm() const          { return _shupiMinLenSpin->value(); }
 int MainWindow::fabaiMaxCount() const          { return _fabaiSpin->value(); }
 int MainWindow::fabaiMinLenMm() const          { return _fabaiMinLenSpin->value(); }
-int MainWindow::jiebaDongbaMaxCount() const    { return _jiebaDongbaSpin->value(); }
 int MainWindow::minLengthMm() const            { return _lenSpin->value(); }
 int MainWindow::minWidthMm() const             { return _widSpin->value(); }
 int MainWindow::rawSaveRatioPct() const        { return _rawSpin->value(); }

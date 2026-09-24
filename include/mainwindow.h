@@ -53,6 +53,11 @@ public:
     int dongbaMinLenMm() const;
     int dongbanMaxCount() const;
     int dongbanMinLenMm() const;
+    // 破洞的第二道更严的门槛（界面行名/原因串都叫「大破洞或大油疤」）。跟上面那对是
+    // 同一个类的两条规则，形状一样：门槛 dongbanBigMinLenMm 以上的破洞算数，
+    // 块数超过 dongbanBigMaxCount 判 NG。
+    int dongbanBigMaxCount() const;
+    int dongbanBigMinLenMm() const;
     int heibaMaxCount() const;
     int quebianMaxCount() const;
     int quebianMinLenMm() const;
@@ -60,7 +65,6 @@ public:
     int shupiMinLenMm() const;
     int fabaiMaxCount() const;
     int fabaiMinLenMm() const;
-    int jiebaDongbaMaxCount() const;
     int minLengthMm() const;
     int minWidthMm() const;
     int rawSaveRatioPct() const;
@@ -106,13 +110,15 @@ private:
     QSpinBox* _heibaSpin        = nullptr;
     QSpinBox* _dongbanSpin      = nullptr;   // 下面 5 个都跟自己的 *MinLenSpin 同一行
     QSpinBox* _dongbanMinLenSpin= nullptr;   // （左数量、右门槛），跟 _dongbaSpin 一个样式
+    // 大破洞或大油疤：dongban 的第二道门槛，行里两个框的排法跟上面一样
+    QSpinBox* _dongbanBigSpin      = nullptr;
+    QSpinBox* _dongbanBigMinLenSpin= nullptr;
     QSpinBox* _quebianSpin      = nullptr;
     QSpinBox* _quebianMinLenSpin= nullptr;
     QSpinBox* _shupiSpin        = nullptr;
     QSpinBox* _shupiMinLenSpin  = nullptr;
     QSpinBox* _fabaiSpin        = nullptr;
     QSpinBox* _fabaiMinLenSpin  = nullptr;
-    QSpinBox* _jiebaDongbaSpin  = nullptr;
     QSpinBox* _lenSpin          = nullptr;
     QSpinBox* _widSpin          = nullptr;
     QSpinBox* _rawSpin          = nullptr;

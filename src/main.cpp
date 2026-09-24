@@ -470,13 +470,14 @@ int main(int argc, char** argv) {
             post.setHeibaMaxCount(win.heibaMaxCount());
             post.setDongbanMaxCount(win.dongbanMaxCount());
             post.setDongbanMinLenMm(win.dongbanMinLenMm());
+            post.setDongbanBigMaxCount(win.dongbanBigMaxCount());
+            post.setDongbanBigMinLenMm(win.dongbanBigMinLenMm());
             post.setQuebianMaxCount(win.quebianMaxCount());
             post.setQuebianMinLenMm(win.quebianMinLenMm());
             post.setShupiMaxCount(win.shupiMaxCount());
             post.setShupiMinLenMm(win.shupiMinLenMm());
             post.setFabaiMaxCount(win.fabaiMaxCount());
             post.setFabaiMinLenMm(win.fabaiMinLenMm());
-            post.setJiebaDongbaMaxCount(win.jiebaDongbaMaxCount());
             post.setMinLengthMm(win.minLengthMm());
             post.setMinWidthMm(win.minWidthMm());
 

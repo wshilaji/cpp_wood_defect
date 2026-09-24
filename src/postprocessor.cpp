@@ -76,10 +76,16 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 //   dongba 死节 / dongban 破洞 / quebian 缺边 / shupi 树皮 / fabai 发白 ——
 //       数之前先过一道【尺寸门槛】: 检测框最长边换算成毫米, 短于门槛的不计数
 //       (工人界面填, 0=不过滤)。这是【过滤】不是【拒绝】: 小的不会把板子判死,
-//       只是不算进它那一类的计数(死节也不算进「活节+死节」那个组合数)。
+//       只是不算进它那一类的计数。
 //       门槛值各类各管各的(死节 30mm 是现场标准, 其余现场还没调过)。
 //       判定口径只有 countsTowardRule() 一处, draw() 用的也是它(只不过把框线压暗来画)——
 //       两处必须同一个口径, 否则会出现「画成不算数的颜色、却被数进去判了 NG」。
+//   dongban 破洞还有【第二道】同样形状、门槛更严的规则(现场叫「一票否决」, 界面行名/
+//       原因串里是「大破洞或大油疤」): 数的是「最长边超过 _dongban_big_min_len_mm 的
+//       破洞」有多少块。它不走 sizeGateMm/countsTowardRule(那是每类一处的门槛表),
+//       自己一条 if —— 一个类两道门槛, 表里放不下第二道。
+//       「一票否决」是这个规则的【用意】不是【实现】: 它仍然是一条数量规则(形状跟上面
+//       那条一模一样), 只是数量和门槛都配得更严, 让一个够大的洞自己就能把板子拦下来。
 //
 // 为什么全改成数量(2026-09-23 一天里改完的):
 //   原来 dongban/quebian/shupi/fabai 走的是【面积和占整图比例】。那个口径的根本毛病是
@@ -89,9 +95,11 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 //   注: 面积算的是检测框 w*h, 不是真实缺陷像素面积(圆形框比实际大约 1.27 倍), 这也是面积
 //   口径不好用的一面。换成最长边之后没有这个膨胀 —— 最长边本来就是框上直接量的。
 //
-// 另有一条组合规则: 单类都没超、但两类加起来超了也要拦(活节+死节)。
-// 曾经还有一条「破洞+缺边面积大于」, 破洞/缺边都改走数量之后凑不出合并口径(个数和面积
-// 没法相加), 2026-09-23 现场删掉了。
+// 跨类组合规则曾经有两条, 现在【一条都没有了】:
+//   「破洞+缺边 面积之和占比 > 0.4%」 2026-09-23 删 —— 破洞/缺边都改走数量之后, 这条
+//     按面积算的凑不出合并口径(个数和面积没法相加);
+//   「活节+死节 数量之和 > 6」        2026-09-24 删(现场定的)。
+// 两条的常量/ini 键都作废了, 见 config.h。现在剩下的全是单类规则。
 //
 // 其余类(shuwen/piwenba/baowen/liefeng/suibian/heiban/banwen/banwenba)
 // 一律默认 OK, 只在左上角面板画框显示。要接入就: 这里加分支 + postprocessor.h 加阈值成员
@@ -128,6 +136,7 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     int heiba_cnt   = 0;
     int shupi_cnt   = 0;
     int fabai_cnt   = 0;
+    int dongban_big_cnt = 0;  // 大破洞：_dongban_big_min_len_mm 以上的破洞块数
 
     for (const auto& d : defects) {
         // 没门槛的类直接数；有门槛的类先问 countsTowardRule。门槛只管计数，
@@ -140,6 +149,12 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
             if (countsTowardRule(d)) dongba_cnt++;
         } else if (d.name == "dongban") {
             if (countsTowardRule(d)) dongban_cnt++;
+            // 第二道门槛(大破洞)跟上面那道各看各的, 不走 sizeGateMm/countsTowardRule
+            // —— 一个类两道门槛, 那张表一类只能放一个数。超过 BIG_MIN 的块必然也过了
+            // 上面那道(40 > 30), 但这里不依赖这个大小关系, 两个门槛都能单独调。
+            if (_dongban_big_min_len_mm > 0 &&
+                boxLongSideMm(d.box) > (float)_dongban_big_min_len_mm)
+                dongban_big_cnt++;
         } else if (d.name == "quebian") {
             if (countsTowardRule(d)) quebian_cnt++;
         } else if (d.name == "shupi") {
@@ -170,24 +185,25 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
         reasons.push_back(countReason("小油疤", _heiba_max_count, 0));
     if (dongban_cnt > _dongban_max_count)
         reasons.push_back(countReason("破洞", _dongban_max_count, _dongban_min_len_mm));
+    // 破洞的第二道(现场叫「一票否决」)。跟上面那条是同一个类的两条规则, 原因串必须让
+    // 人分得清是哪一条 —— 所以类名写「大破洞或大油疤」, 跟上面那条「破洞」是两个不同的
+    // 字符串, 工人照着界面上的行名一对就知道是哪行触发的。
+    // 「大油疤」必须写进去: 模型里没有这个大油疤类, 大油疤是并进 dongban 一起标的
+    // (见 config.h 的类名对照), 所以这条规则实际管的是「破洞 + 大油疤」两样东西,
+    // 只写「大破洞」工人会以为大油疤不归它管。
+    if (dongban_big_cnt > _dongban_big_max_count)
+        reasons.push_back(countReason("大破洞或大油疤", _dongban_big_max_count,
+                                      _dongban_big_min_len_mm));
     if (quebian_cnt > _quebian_max_count)
         reasons.push_back(countReason("缺边", _quebian_max_count, _quebian_min_len_mm));
     if (shupi_cnt > _shupi_max_count)
         reasons.push_back(countReason("树皮", _shupi_max_count, _shupi_min_len_mm));
     if (fabai_cnt > _fabai_max_count)
         reasons.push_back(countReason("发白", _fabai_max_count, _fabai_min_len_mm));
-    // 组合规则：单类都没超，但活节+死节加起来超了也要拦。
-    // 数的是上面那两个（死节已过门槛），活节那半边没门槛 —— 这条读作
-    // 「所有活节 + 只算够大的死节」，跟单类规则同一个口径。
-    // 门槛要写进原因串，而且得点明是死节的门槛（「死节30mm以上」）：这条规则里两个类
-    // 只有一个带门槛，不写出是哪一边的，工人会拿 30mm 去量活节。
-    // 这条没法直接用上面的 countReason —— 那个只输出「(30mm以上)」，不带类名。
-    if (jieba_cnt + dongba_cnt > _jieba_dongba_max_count) {
-        std::string s = "活节+死节>" + std::to_string(_jieba_dongba_max_count);
-        if (_dongba_min_len_mm > 0)
-            s += "(死节" + std::to_string(_dongba_min_len_mm) + "mm以上)";
-        reasons.push_back(s);
-    }
+    // 这里原来还有一条跨类组合规则（活节+死节 数量之和 > 6），2026-09-24 现场删了。
+    // 现在 reasons 里全是单类规则，一条跨类的都没有（见函数头那段）。
+    // ⚠ 常量和 ini 键（JIEBA_DONGBA_MAX_COUNT / jieba_dongba_max）都作废了，已删；
+    //   ini 里那个键还留着不影响，不用去清。
 
     // 尺寸规则跟上面那 7 条缺陷规则不是一回事，得分开数：存图那边只给「有真缺陷」的
     // NG 留档，纯尺寸 NG（板小了一点）不存。所以拼尺寸原因之前先把缺陷原因的条数记下来。

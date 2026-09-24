@@ -21,7 +21,8 @@ public:
                                 cv::Mat& frame, const cv::Size& size);
 
     /** 整体 NG 判定。全部按【数量】判：jieba/heiba 不管大小全算，dongba/dongban/
-     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数；另有 jieba+dongba 的组合数；
+     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数；dongban 另有第二道更严的
+     *  数量规则（大破洞或大油疤，门槛/上限见 dongbanBigMinLenMm / dongbanBigMaxCount）；
      *  板长/板宽按测得尺寸；其余类默认 OK。reason 输出 NG 原因。
      *  ⚠ 2026-09-23 起本项目【没有面积规则了】—— dongban/quebian/shupi/fabai 原本都按
      *    「面积和占整图比例」判，现场逐个改成了数量 + 尺寸门槛（为什么改见 postprocessor.cpp
@@ -56,6 +57,17 @@ public:
     int  dongbanMaxCount() const   { return _dongban_max_count; }
     void setDongbanMinLenMm(int mm) { _dongban_min_len_mm = mm; }
     int  dongbanMinLenMm() const    { return _dongban_min_len_mm; }
+    /** 破洞的第二道数量规则，现场叫【一票否决】（行名/原因串：大破洞或大油疤）：
+     *  最长边超过此值(mm)的才算数，块数超过 dongbanBigMaxCount 判 NG。跟上面那条
+     *  (dongbanMaxCount/dongbanMinLenMm) 是同一个类的两道门槛：那条管「小的多」，
+     *  这条管「单块太大」。形状完全一样，没有单开一套逻辑 ——「一票否决」说的是用意
+     *  （一个 40mm 的大洞比两个 30mm 的严重），不是实现。
+     *  名字里带「大油疤」不是笔误：模型没有大油疤这个类，它并进 dongban 一起标，
+     *  这条实际管的是破洞 + 大油疤两样。 */
+    void setDongbanBigMaxCount(int n) { _dongban_big_max_count = n; }
+    int  dongbanBigMaxCount() const   { return _dongban_big_max_count; }
+    void setDongbanBigMinLenMm(int mm) { _dongban_big_min_len_mm = mm; }
+    int  dongbanBigMinLenMm() const    { return _dongban_big_min_len_mm; }
 
     void setHeibaMaxCount(int n) { _heiba_max_count = n; }
     int  heibaMaxCount() const   { return _heiba_max_count; }
@@ -74,10 +86,6 @@ public:
     int  quebianMaxCount() const   { return _quebian_max_count; }
     void setQuebianMinLenMm(int mm) { _quebian_min_len_mm = mm; }
     int  quebianMinLenMm() const    { return _quebian_min_len_mm; }
-
-    /** jieba+dongba 数量之和超过此值判 NG（单类都没超也可能被这条拦住） */
-    void setJiebaDongbaMaxCount(int n) { _jieba_dongba_max_count = n; }
-    int  jiebaDongbaMaxCount() const   { return _jieba_dongba_max_count; }
 
     /** 测得板长/板宽小于此值(mm)判 NG */
     void setMinLengthMm(int n) { _min_length_mm = n; }
@@ -103,6 +111,8 @@ private:
     int   _dongba_min_len_mm      = Config::DONGBA_MIN_LEN_MM;
     int   _dongban_max_count      = Config::DONGBAN_MAX_COUNT;
     int   _dongban_min_len_mm     = Config::DONGBAN_MIN_LEN_MM;
+    int   _dongban_big_max_count  = Config::DONGBAN_BIG_MAX_COUNT;
+    int   _dongban_big_min_len_mm = Config::DONGBAN_BIG_MIN_LEN_MM;
     int   _heiba_max_count        = Config::HEIBA_MAX_COUNT;
     int   _shupi_max_count        = Config::SHUPI_MAX_COUNT;
     int   _shupi_min_len_mm       = Config::SHUPI_MIN_LEN_MM;
@@ -110,7 +120,6 @@ private:
     int   _fabai_min_len_mm       = Config::FABAI_MIN_LEN_MM;
     int   _quebian_max_count      = Config::QUEBIAN_MAX_COUNT;
     int   _quebian_min_len_mm     = Config::QUEBIAN_MIN_LEN_MM;
-    int   _jieba_dongba_max_count = Config::JIEBA_DONGBA_MAX_COUNT;
     int   _min_length_mm          = Config::MIN_LENGTH_MM;
     int   _min_width_mm           = Config::MIN_WIDTH_MM;
 };
