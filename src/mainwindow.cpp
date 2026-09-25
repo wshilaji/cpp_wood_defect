@@ -133,15 +133,19 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
 
 // ---- 左下角「最近结果」缩略图条 ----
 // 每张缩略图的大小(px)和张数。宽度账（1920×1080 全屏时左边这列可用宽 ~1450px）：
-//   6 张 × 200 + 5 道间距 6 = 1230px，余 ~220px。
-// 为什么是 6 而不是更多：缩略图要能放下一个「大大的 OK/NG」——200px 宽时色带约 55px
-// 高、字约 33px，站远一点扫一眼就看见；掉到 130px 宽那个字只剩 21px，就得凑近看，
-// 反而失去了「一眼扫过去」这个功能本来的意义。要更长的一条可以加张数，但每加一张
-// 那 200px 是从图高里出的（横条越高，上面的木板图越小）。
+//   6 张 × 170 + 5 道间距 6 = 1050px，余 ~400px（左边这列的实际约束是【高度】不是
+//   宽度，所以余这么宽不浪费 —— 见下面那段）。
+// 【高度】才是木板图真正缺的东西：木板图 2448×2048 摆进左边这列，能占多高是被
+//   「列高 - 条子高」卡的，不是被列宽卡的；条子高 ≈ THUMB_H + 小标题(~20px) + 间距。
+//   所以想把上面的木板图要回来，只有缩 THUMB_H 这一条路（减张数只省宽度，一点高度
+//   都省不出来），而且省 1px 条高 = 木板图多 1px。THUMB_H 从 167 收到 142 就是这么来的。
+// 为什么是 6 而不是更多：缩略图要能放下一个「大大的 OK/NG」——170px 宽时色带约 47px
+// 高、字约 28px，站远一点扫一眼就看见；再小下去那个字就得凑近看，反而失去了
+// 「一眼扫过去」这个功能本来的意义。这是这条横条的下限，别再往小收了。
 // ⚠ 这三个数改小/改大都不用动别处：pushThumb 按 THUMB_W×THUMB_H 缩，格子按 THUMB_COUNT
 //   建。但张数别超过「可用宽 / (THUMB_W + 间距)」——超了横条会把左边的木板图挤窄。
-static constexpr int THUMB_W     = 200;
-static constexpr int THUMB_H     = 167;   // 跟 2448×2048 同比例(1.195:1)
+static constexpr int THUMB_W     = 170;
+static constexpr int THUMB_H     = 142;   // 跟 2448×2048 同比例(1.195:1)
 static constexpr int THUMB_COUNT = 6;
 static constexpr int THUMB_GAP   = 6;
 
@@ -642,7 +646,7 @@ void MainWindow::pushThumb(const cv::Mat& result, bool ok) {
     if (_thumbs.empty() || result.empty() || result.type() != CV_8UC3) return;
 
     // 先缩再转。反过来（先转成 QImage 再缩）是白拷一份 15MB —— cvMatToQImage 结尾有
-    // .copy()，而缩完只有 200×167（~130KB）。
+    // .copy()，而缩完只有 THUMB_W×THUMB_H（~90KB）。
     // INTER_AREA 是下采样该用的滤波：直接抽点(INTER_NEAREST)会把板上的框线糊成噪点，
     // 而框线恰恰是缩略图里除了 OK/NG 之外唯一还看得出来的信息。实测这步约 1~2ms。
     cv::Mat small;
@@ -652,7 +656,7 @@ void MainWindow::pushThumb(const cv::Mat& result, bool ok) {
 
     // 那个大大的 OK/NG：画在【顶部】一条带上，不铺满整张 —— 铺满就把木板盖掉了，
     // 而「哪边有缺陷、框集中在哪」是缩略图里第二件要看的东西（第一件是 OK 还是 NG）。
-    // 色带占图高三分之一，字占色带五分之三（200×167 时约 55px 带、33px 字）。
+    // 色带占图高三分之一，字占色带五分之三（170×142 时约 47px 带、28px 字）。
     {
         QPainter p(&img);
         p.setRenderHint(QPainter::TextAntialiasing, true);
