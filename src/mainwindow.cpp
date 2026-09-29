@@ -469,10 +469,41 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 99, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
                        &_fabaiSpin, &_fabaiMinLenSpin, lSet);
-    // 一条提示罩住上面五行，不逐行重复 —— 五行的左边、右边语义完全一样。
-    // ⚠ 这行必须短，一行就好：整个面板（含最底下的关机/重启）都塞在 QScrollArea 里，
-    //   这里多占一行，底下那排就往下滚一行 —— 而滚出去的偏偏是关机/重启，
-    //   全界面最不能猜错、也最不该要人找的两个键。
+    // 发白的【置信度门槛】(2026-09-29 现场加的): 模型给的 fabai 概率大于这个值, 这一块
+    // 才真的算发白 —— 才算进上面那行「数量大于」的数。
+    // 为什么单开一行、不并进上面那行: 上面那行已经是「数量 + 尺寸门槛」两个框的形状
+    // (宽度账见 addSpinRowTwoBoxes, 余量只够再加一个不带标签的框), 再塞第三个就只能不配
+    // 标签, 那这行就成了三个门槛共用一个标签, 工人看不出第三个框管什么。
+    // 紧挨着上面那行放的理由跟「大破洞或大油疤」贴着「破洞」放一样: 说的都是同一个类,
+    // 中间隔开工人就得来回找。
+    // 用 QDoubleSpinBox 而不是 QSpinBox: 这个数就是图上标签印的那个数(比如 fabai 0.58),
+    // 显成 0.65 工人能直接跟框上的数字比; 显成「65 %」就得在心里换算一次。
+    // 范围从 0.00 起: 0 = 关掉这道门槛(跟尺寸门槛「0 = 不过滤」同一个约定)。
+    // ⚠ 0.51 以下的数【等于没填】—— 全局 CONF_THRESHOLD(0.5) 在更前面就把 ≤0.5 的检测
+    //   整个丢掉了, 图上根本不会出现 conf ≤ 0.5 的框。留着 0~0.5 这段是为了「关掉」这个
+    //   语义, 不是为了让人在这一段里调。
+    {
+        auto* box = new QWidget;
+        auto* row = new QHBoxLayout(box);
+        row->setContentsMargins(0, 0, 0, 0);
+        row->setSpacing(8);
+        auto* lbl = new QLabel(QString::fromUtf8("发白概率大于"));
+        lbl->setStyleSheet("color:#c8c8c8;");
+        _fabaiMinConfSpin = new QDoubleSpinBox;
+        _fabaiMinConfSpin->setRange(0.00, 0.99);
+        _fabaiMinConfSpin->setSingleStep(0.05);   // 0 → 0.65 正好 13 步, 整步能踩到
+        _fabaiMinConfSpin->setDecimals(2);
+        _fabaiMinConfSpin->setValue(0.65);
+        row->addWidget(lbl, 1);
+        row->addWidget(_fabaiMinConfSpin);
+        lSet->addWidget(box);
+    }
+    // 一条提示罩住上面这几行（五个类的数量/直径 + 发白那道概率），不逐行重复 ——
+    // 左边、右边的语义完全一样。
+    // ⚠ 这行必须短，一行就好：面板在 QScrollArea 里，多占一行就多一行要滚。
+    //   （原先底下那排关机/重启也在滚动区里，那时多一行会把它们顶出屏幕；那排已经挪到
+    //    滚动区外面、钉在底部了，见下面 btnRow 那段 —— 所以现在的高度压力没以前那么
+    //    致命，但仍然别在面板里堆可有可无的行。）
     // 所以面板上只留这两条；「最长边怎么算」「没过门槛照样画框、只是框线暗一档」
     // 这些解释不再占面板高度。
     auto* gateHint = new QLabel(
@@ -486,7 +517,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                    QString::fromUtf8("板宽小于"), 0, 2000, 600, " mm", &_widSpin, lSet);
     // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示。
     // 两个初值都是 0 —— 也就是「解锁之后默认也不存 OK 板」，要抽样得工程师自己往里填。
-    // 注意：这两个值【没有】持久化（下面那 17 个键里没它俩），所以每次启动都回到 0，
+    // 注意：这两个值【没有】持久化（上面那批 load/save 的键里没它俩），所以每次启动都回到 0，
     // 现场调过也不留（ini 里那个 raw_save_pct 是死键，跟这行没关系）——
     // 要让它记住得另加 load/save + connect。
     _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
@@ -541,6 +572,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _shupiMinLenSpin->setValue(s.value("shupi_min_len_mm", 30).toInt());
     _fabaiSpin->setValue(s.value("fabai_max_count", 99).toInt());
     _fabaiMinLenSpin->setValue(s.value("fabai_min_len_mm", 30).toInt());
+    _fabaiMinConfSpin->setValue(s.value("fabai_min_conf", 0.65).toDouble());
     _lenSpin->setValue(s.value("min_len_mm", 1200).toInt());
     _widSpin->setValue(s.value("min_wid_mm", 600).toInt());
     _expoSpin->setValue(s.value("exposure_us", 6000).toInt());
@@ -573,6 +605,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_max_count", v); });
     connect(_fabaiMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_min_len_mm", v); });
+    // 全项目唯一一个 double 的持久化键。存的是 0.65 这样的实数, 读的时候要 toDouble
+    // (写成 toInt 会得到 0, 表现成「重启后这道门槛自己关了」, 而且不报错)。
+    connect(_fabaiMinConfSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_min_conf", v); });
     connect(_lenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("min_len_mm", v); });
     connect(_widSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -903,6 +939,7 @@ int MainWindow::shupiMaxCount() const          { return _shupiSpin->value(); }
 int MainWindow::shupiMinLenMm() const          { return _shupiMinLenSpin->value(); }
 int MainWindow::fabaiMaxCount() const          { return _fabaiSpin->value(); }
 int MainWindow::fabaiMinLenMm() const          { return _fabaiMinLenSpin->value(); }
+double MainWindow::fabaiMinConf() const        { return _fabaiMinConfSpin->value(); }
 int MainWindow::minLengthMm() const            { return _lenSpin->value(); }
 int MainWindow::minWidthMm() const             { return _widSpin->value(); }
 int MainWindow::rawSaveRatioPct() const        { return _rawSpin->value(); }

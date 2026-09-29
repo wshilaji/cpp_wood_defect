@@ -21,9 +21,10 @@ public:
                                 cv::Mat& frame, const cv::Size& size);
 
     /** 整体 NG 判定。全部按【数量】判：jieba/heiba 不管大小全算，dongba/dongban/
-     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数；dongban 另有第二道更严的
-     *  数量规则（大破洞或大油疤，门槛/上限见 dongbanBigMinLenMm / dongbanBigMaxCount）；
-     *  板长/板宽按测得尺寸；其余类默认 OK。reason 输出 NG 原因。
+     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（fabai 还多一道置信度门槛，
+     *  见 fabaiMinConf）；dongban 另有第二道更严的数量规则（大破洞或大油疤，门槛/上限见
+     *  dongbanBigMinLenMm / dongbanBigMaxCount）；板长/板宽按测得尺寸；其余类默认 OK。
+     *  reason 输出 NG 原因。
      *  ⚠ 2026-09-23 起本项目【没有面积规则了】—— dongban/quebian/shupi/fabai 原本都按
      *    「面积和占整图比例」判，现场逐个改成了数量 + 尺寸门槛（为什么改见 postprocessor.cpp
      *    的函数头注释）。所以这里不再需要图像尺寸。
@@ -44,6 +45,8 @@ public:
     // 判定用的 7 个类全是「数量」规则：MAX_COUNT 是数量上限，MIN_LEN_MM 是尺寸门槛
     // （检测框最长边换算成毫米，短于此值的不计数，0 = 不过滤）。jieba/heiba 没有门槛这一半。
     // 尺寸门槛的毫米换算是标定值（config.h MM_PER_PX），相机装高装低它就偏 —— 见那里的注释。
+    // FABAI_MIN_CONF 是另一种门槛（模型置信度，不是尺寸），只有 fabai 有这个 ——
+    // 它也是本项目唯一一道不看框大小、只看模型把握的门槛。
 
     void setJiebaMaxCount(int n) { _jieba_max_count = n; }
     int  jiebaMaxCount() const   { return _jieba_max_count; }
@@ -81,6 +84,13 @@ public:
     int  fabaiMaxCount() const   { return _fabai_max_count; }
     void setFabaiMinLenMm(int mm) { _fabai_min_len_mm = mm; }
     int  fabaiMinLenMm() const    { return _fabai_min_len_mm; }
+    /** fabai 的【置信度门槛】：模型的 fabai 概率不高于此值的不算数（0 = 关掉这道门槛，
+     *  跟尺寸门槛的 0 一个意思）。界面上是「发白概率大于」那个框。
+     *  ⚠ 它跟 MIN_LEN_MM 那类尺寸门槛不是一回事：尺寸是从框上量出来的、跟着相机标定走；
+     *    置信度是模型自己给的分、跟标定无关。两道门槛是「且」——都过了才算数。
+     *  为什么单给 fabai 开这一道：见 config.h 的 FABAI_MIN_CONF。 */
+    void setFabaiMinConf(double c) { _fabai_min_conf = c; }
+    double fabaiMinConf() const    { return _fabai_min_conf; }
 
     void setQuebianMaxCount(int n) { _quebian_max_count = n; }
     int  quebianMaxCount() const   { return _quebian_max_count; }
@@ -94,12 +104,30 @@ public:
     int  minWidthMm() const    { return _min_width_mm; }
 
 private:
+    /** 某个类的【检测下限】：低于它的检测根本不存在（不画框、不进统计、不参与判定）。
+     *  默认就是构造时传进来的全局门槛（Config::CONF_THRESHOLD），只有 heiba 用自己那个
+     *  更低的数（Config::HEIBA_MIN_CONF）。
+     *  ⚠ 跟下面那两个门槛表【不是一层的东西】，别混：
+     *      minDetectConf（这一道）——「这算不算一次检测」，不过的连画都不画；
+     *      sizeGateMm / minConfFor ——「这次检测算不算数」，不过的照画、只是框线压暗。
+     *    所以这个数只可能比全局【低】（放宽），那两个只可能比全局【严】。 */
+    float minDetectConf(const std::string& name) const;
+
     /** 某个类的尺寸门槛(mm)。没这道门槛的类返回 0，也就是「全都算」。 */
     int sizeGateMm(const std::string& name) const;
 
-    /** 这一块缺陷算不算数：有没有过它那个类的尺寸门槛（没门槛的类一律算）。
-     *  isNG 拿它筛数量、draw 拿它挑框色 —— 判定和显示必须同一个口径，
-     *  所以「怎么算过门槛」只留这一处，两个调用点不可能走偏。 */
+    /** 某个类的置信度门槛。没这道门槛的类返回 0，也就是「全都算」。
+     *  跟 sizeGateMm 是一对：那个管「多大才算」，这个管「多确定才算」。 */
+    double minConfFor(const std::string& name) const;
+
+    /** 这个类有没有【任何】门槛（尺寸或置信度都有份）。给 drawSummary 用：它靠这个决定
+     *  写成「算数/全部」还是「xN」——只问 sizeGateMm 的话，一个类把尺寸门槛调成 0
+     *  （不过滤）、只留置信度门槛时会被当成没门槛，面板写 x5 而实际只有 3 个算数。 */
+    bool hasGate(const std::string& name) const;
+
+    /** 这一块缺陷算不算数：它那个类的门槛（尺寸 + 置信度）全过了才算。
+     *  isNG 拿它筛数量、draw 拿它挑框色、drawSummary 拿它算「算数/全部」——
+     *  判定和显示必须同一个口径，所以「怎么算过门槛」只留这一处，三个调用点不可能走偏。 */
     bool countsTowardRule(const Defect& d) const;
 
     float _thresh;
@@ -118,6 +146,7 @@ private:
     int   _shupi_min_len_mm       = Config::SHUPI_MIN_LEN_MM;
     int   _fabai_max_count        = Config::FABAI_MAX_COUNT;
     int   _fabai_min_len_mm       = Config::FABAI_MIN_LEN_MM;
+    double _fabai_min_conf        = Config::FABAI_MIN_CONF;
     int   _quebian_max_count      = Config::QUEBIAN_MAX_COUNT;
     int   _quebian_min_len_mm     = Config::QUEBIAN_MIN_LEN_MM;
     int   _min_length_mm          = Config::MIN_LENGTH_MM;

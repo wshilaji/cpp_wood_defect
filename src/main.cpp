@@ -480,6 +480,7 @@ int main(int argc, char** argv) {
             post.setShupiMinLenMm(win.shupiMinLenMm());
             post.setFabaiMaxCount(win.fabaiMaxCount());
             post.setFabaiMinLenMm(win.fabaiMinLenMm());
+            post.setFabaiMinConf(win.fabaiMinConf());
             post.setMinLengthMm(win.minLengthMm());
             post.setMinWidthMm(win.minWidthMm());
 

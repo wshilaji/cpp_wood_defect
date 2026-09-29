@@ -9,6 +9,7 @@
 
 class QLabel;
 class QSpinBox;
+class QDoubleSpinBox;
 class QCheckBox;
 class QPushButton;
 
@@ -18,8 +19,9 @@ class QPushButton;
  * 由检测主循环驱动刷新：
  *   setImage/setResult/setStats/setMeasure/setCycleMs
  *   setGpuTemp/setCpuTemp/setMemoryPct/setDiskPct（系统状态，空闲时刷新）
- * 工人设置（各类数量 / 面积占比 / 板长板宽 / 存图比例 / 曝光增益）用 QSpinBox，
- * 主循环轮询读取后下发。
+ * 工人设置（各类数量 / 各类尺寸门槛 / 发白那道置信度门槛 / 板长板宽 / 存图比例 / 曝光增益）
+ * 用输入框，主循环轮询读取后下发。除了发白概率那一个是 QDoubleSpinBox，其余都是 QSpinBox。
+ * （2026-09-23 起【没有面积占比这类设置了】—— 四个类都改成了数量 + 尺寸门槛，见 config.h）
  * 手动拍照 通过按钮置位标志，主循环轮询消费（takeManualTrigger）。
  * 「最小化」不走主循环：点一下就把窗口藏起来、屏幕角上留一个小条（_restoreTab）点它
  * 回来。检测全程照跑 —— 相机/PLC/推理都不断，只是屏幕让出来了。见 minimizeToDesktop。
@@ -62,6 +64,8 @@ public:
     // ---- 工人设置（主循环轮询读取） ----
     // 判定用的 7 个类全是数量规则：*MaxCount 是数量上限，*MinLenMm 是尺寸门槛
     // （最长边短于此值的不计数，0 = 不过滤）。jieba/heiba 没有门槛这一半。
+    // fabai 除了尺寸门槛还多一道置信度门槛（fabaiMinConf）—— 全项目唯一一道不看框大小、
+    // 只看模型把握的门槛，两道是「且」的关系。
     int jiebaMaxCount() const;
     int dongbaMaxCount() const;
     int dongbaMinLenMm() const;
@@ -79,6 +83,10 @@ public:
     int shupiMinLenMm() const;
     int fabaiMaxCount() const;
     int fabaiMinLenMm() const;
+    /** fabai 的置信度门槛：模型的 fabai 概率大于此值才算数（0 = 关掉这道门槛）。
+     *  ⚠ 有作用的区间是 0.51~0.99：全局 CONF_THRESHOLD(0.5) 在更前面就把 ≤0.5 的检测
+     *    整个丢掉了，图上根本不会出现 conf ≤ 0.5 的框，填 0.5 以下等于没填。 */
+    double fabaiMinConf() const;
     int minLengthMm() const;
     int minWidthMm() const;
     int rawSaveRatioPct() const;
@@ -139,6 +147,9 @@ private:
     QSpinBox* _shupiMinLenSpin  = nullptr;
     QSpinBox* _fabaiSpin        = nullptr;
     QSpinBox* _fabaiMinLenSpin  = nullptr;
+    // 发白那行的第三个数（置信度门槛），单独占一行、紧跟在发白行下面 —— 在全项目所有
+    // 输入框里它是唯一一个 QDoubleSpinBox（别的都是整数），因为它就是个 0~1 的小数。
+    QDoubleSpinBox* _fabaiMinConfSpin = nullptr;
     QSpinBox* _lenSpin          = nullptr;
     QSpinBox* _widSpin          = nullptr;
     QSpinBox* _rawSpin          = nullptr;

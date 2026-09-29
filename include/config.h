@@ -23,31 +23,77 @@ constexpr int         PLC_TCP_PORT     = 502;   // Modbus TCP 标准端口
 constexpr const char* ENGINE_PATH    = "models/best.engine";
 constexpr float       CONF_THRESHOLD = 0.5f;
 
-// ---- 类别（与模型输出 class_id 对应，0起始） ----
+// ---- heiba 小油疤单独的检测下限: 2026-09-29 加的 ----
+// 低于这个数的 heiba 检测【根本不算一次检测】(不画框、不进统计、没机会参与判定)。
+// 它跟 CONF_THRESHOLD 是同一层的东西 —— 都是「有没有这次检测」, 只是在 process() 里
+// 按类挑一个用: 别的类用全局 CONF_THRESHOLD, 只有 heiba 用这个更低的数。
+// 为什么给 heiba 单独放低: 现场手工拿 .pt 直接跑推理, 看到很多真油疤的分数只有 0.28
+//   左右 —— 按全局 0.5 全被丢掉了。放低到 0.25 让这些能进来。
+//   (顺带: 新模型整体分数都偏低, 验证图上 dongba/dongban/jieba/liefeng 也多在 0.3~0.4,
+//    所以别的类将来可能也要各自放宽 —— 都在这一层做, 别去动全局。)
+//
+// ⚠⚠ 这一道跟 fabai 那道置信度门槛【不是一回事】, 别搞混:
+//     这里是【检测下限】, 决定「存不存在」, 低于它的框连画都不画;
+//     FABAI_MIN_CONF 是【计数门槛】, 决定「算不算数」, 不过的框照画、只是框线压暗。
+//   所以这个数只可能比 CONF_THRESHOLD【低】(放宽); 想要更【严】的按类门槛,
+//   得用 postprocessor 的 minConfFor 那道, 不是在这里填个大数。
+//   下面的 static_assert 就是钉这件事。
+//
+// ⚠ 写死在这里、不上界面、不进 config.ini —— 现场明确要求(这个数是跟着模型走的,
+//   不是工人该拧的旋钮)。要调就改这里重新编译。
+// ⚠ 引擎导出时 EfficientNMS 里还烤了一个 score_threshold, 那是这道线【之前】的硬底:
+//   那个数要是没低于 0.25, 这里填 0.25 也没用(框根本吐不出来) —— 换引擎时记得核一下。
+// ⚠ heiba 是【唯一一道门槛都没有】的判定类(没尺寸门槛、也没计数门槛), 所以下限一放宽,
+//   【0.25 及以上】的 heiba 全部计入 heiba > HEIBA_MAX_COUNT 那个数 —— 其中 0.25~0.5
+//   这一段是这次新多出来的(以前被全局 0.5 丢掉了), 0.5 以上本来就在算。
+//   现场 config.ini 里 heiba_max=24, 而新多出来的这一段模型给的框不少(手工推理时一块板上
+//   七八个 heiba 都落在 0.3 一带) —— 上线前拿现场板过一遍, 24 这个数可能要放宽。
+constexpr float HEIBA_MIN_CONF = 0.25f;
+
+// 这个数只可能比全局低: 它的语义是「放宽」。要是填得比全局还高, 那就是想写一道更严的
+// 门槛 —— 那种东西在 minConfFor(计数门槛) 那一层, 写在这儿会静默不生效(全局先把它筛了)。
+static_assert(HEIBA_MIN_CONF <= CONF_THRESHOLD,
+              "HEIBA_MIN_CONF 是【检测下限】, 只能比 CONF_THRESHOLD 低/相等; "
+              "要更严的按类门槛请用 postprocessor.cpp 的 minConfFor");
+
+// ---- 类别（下表的下标 = 模型的 class_id，必须与引擎训练时的 names 逐行一致） ----
 // 现场叫法(界面/工人口头用的)与下面拼音类名的对应, 代码里只有拼音, 记这里免得回头认不出:
 //   jieba   活节   —— 木节发白、按不掉, 不影响使用
 //   dongba  死节   —— 节扣没掉, 但使劲一按就掉
 //   heiba   小油疤 —— 黑色油滴在板面, 板子不碎; 单个没事, 数量多了才扔
 //   dongban 破洞   —— 节扣掉了板子被穿透, 底下黑传送带透出来; **大油疤也标成这一类**
 //   quebian 缺边
-//   shupi   树皮   —— 板面带树皮; 2026-09-23 起按面积和占比判 NG
-//   fabai   发白   —— 2026-09-23 新加的类, 按面积和占比判 NG; 待现场补一句这个类长什么样
-// 其余(shuwen/piwenba/baowen/liefeng/suibian/heiban/banwen/banwenba)
+//   shupi   树皮   —— 板面带树皮; 2026-09-23 起按数量 + 尺寸门槛判(原为面积和占比)
+//   fabai   发白   —— 2026-09-23 新加的类, 按数量 + 尺寸门槛判, 另有一道置信度门槛
+//                      (全项目唯一一道, 见下面 FABAI_MIN_CONF); 待现场补一句这个类长什么样
+// 其余(shuwen/piwenba/baowen/liefeng/heiban/banwen/banwenba)
 // 目前只在图上画框显示, 不参与 NG 判定 —— 判定逻辑见 postprocessor.cpp 的 isNG()。
-// 注意 34-35 行的 SCRATCH_NG_LEN / SCRATCH_ASPECT 是给纹类(shuwen/piwenba/baowen)准备的,
+// 注意下面 SCRATCH_NG_LEN / SCRATCH_ASPECT 是给纹类(shuwen/piwenba/baowen)准备的,
 // 常量定义了但 isNG() 里从来没实现, 现在全代码无引用。
 //
-// ⚠ 顺序不能动: 这里的下标就是模型的 class_id, 改顺序等于把模型输出对错类。
-//   fabai 是【追加在最后】的(下标 14): 前面 0-13 一个没动, 所以现有那份 14 类的
-//   best.engine / labels.txt 照跑不误 —— trtyolo 只吐类别 id, id→名字全在这个表里,
-//   多出来的第 15 个名字没人会用上, 不会崩。
-//   ⚠ 重训模型时, 新 labels.txt 必须让 fabai 也在最后一行(第 15 行)。顺序对不上不会
-//   报任何错, 只会静默把类别判错 —— 这是本项目最容易出、最难查的一类事故。
+// ⚠⚠ 顺序是这份文件里最要命的东西: 下标就是模型的 class_id, 顺序一错, 每个框都会被叫成
+//   别的类、还会拿别的类的门槛去判它 —— 而且【不会报任何错】, 只是静默把结果判错。
+//   这是本项目最容易出、最难查的一类事故, 2026-09-29 就出过一次(见下)。
+//
+// ⚠ 2026-09-29 这份顺序改过一次。原因: 现场重训了模型(models/train_npt640/), 新引擎的
+//   names 跟旧表对不上了 —— 旧表是 dongba, dongban, jieba, shupi, ...; 新引擎是
+//   dongban, dongba, heiba, jieba, ...(头两个对调、后面整体挪位), 而且 suibian 这个类在
+//   新数据集里没有了(模型输出 14 类, 旧表是 15 个名字)。当时的表现会是:
+//     模型吐 0(破洞)   → 被叫成「死节」, 拿死节的门槛(2 个/30mm)去判它;
+//     模型吐 10(发白)  → 落到旧表的「suibian」上, 而 suibian 不参与判定 ⇒ 发白永不生效。
+//   改的只有这张表: 判定阈值、ini 键、界面行名全是【按名字】走的, 别处一处都不用动
+//   (全项目按下标取类的地方只有这一张表 + postprocessor 里 cls_id→名字那一次转换)。
+//
+// 换引擎时怎么核对这张表(上线前务必做一遍, 五分钟的事):
+//   训练目录里那张 confusion_matrix.png, 坐标轴顺序【就是】模型的 class_id 顺序
+//   (Ultralytics 拿模型自己的 names 画的); models/labels.txt 应当是同一份。
+//   把这两样对着下面这个表逐行念一遍, 有对不上的先别上线。
+//   这份顺序的出处是 models/train_npt640/(2026-09-29 那轮训练) —— 是照着上面那张矩阵
+//   和 labels.txt 核对出来的, 不是猜的。
 const std::vector<std::string> CLASSES = {
-    "dongba", "dongban", "jieba", "shupi", "shuwen",
-    "heiba", "piwenba", "quebian", "baowen", "liefeng",
-    "suibian", "heiban", "banwen", "banwenba",
-    "fabai"
+    "dongban", "dongba", "heiba", "jieba", "quebian",
+    "shuwen", "shupi", "liefeng", "piwenba", "baowen",
+    "fabai", "heiban", "banwen", "banwenba"
 };
 
 // ---- 判定阈值 ----
@@ -115,6 +161,18 @@ constexpr int   SHUPI_MAX_COUNT  = 99;       // shupi 树皮:算数的块数 > �
 constexpr int   SHUPI_MIN_LEN_MM = 30;       // shupi 门槛(mm):最长边短于此值不计数
 constexpr int   FABAI_MAX_COUNT  = 99;       // fabai 发白:算数的块数 > 此值判 NG
 constexpr int   FABAI_MIN_LEN_MM = 30;       // fabai 门槛(mm):最长边短于此值不计数
+// fabai 的【置信度门槛】(2026-09-29 加的) —— 全项目唯一一道非尺寸门槛。
+// 模型的 fabai 概率不高于这个值的, 那一块不算发白(也就进不了上面那个 FABAI_MAX_COUNT)。
+// 为什么单给它开一道: 现场 2026-09-29 提的要求是「发白只有概率大于 0.65 才算真的是发白」
+//   —— 也就是对发白这一个类再收紧一道, 别的类不动。做成 fabai 专属而不是去调全局
+//   CONF_THRESHOLD, 是因为那个数一动就是 14 个类一起动, 而这里只针对发白。
+//   (至于「为什么是发白」—— 现场没说原因, 别在这条注释里替他们编一个。)
+// ⚠ 跟 MIN_LEN_MM 那类尺寸门槛【不是一回事】: 尺寸是从框上量出来、跟着相机标定走的,
+//   置信度是模型自己给的分、跟标定无关。两道门槛是「且」的关系 —— 尺寸和概率都过了
+//   才算数(见 postprocessor.cpp 的 countsTowardRule)。两个数谁松谁紧没有固定关系,
+//   现场各自调: 把门槛调很高、数量上限留着 99, 效果就是「只有很确定的发白才拦板」。
+// 界面「发白概率大于」那个框认这个值, 口径是【大于】(等于不算), 跟界面文案一致。
+constexpr float FABAI_MIN_CONF = 0.65f;
 // 「dongban+quebian 面积之和占比 > 0.4%」这条跨类组合规则 2026-09-23 删掉: 破洞/缺边都
 // 改走数量之后, 这条按面积算的没有对应的口径了(个数和面积没法相加)。常量
 // DONGBAN_QUEBIAN_AREA_RATIO 和 ini 键 dongban_quebian_area_pct 一起作废。
