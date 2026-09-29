@@ -135,21 +135,32 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
 }
 
 // ---- 左下角「最近结果」缩略图条 ----
-// 每张缩略图的大小(px)和张数。宽度账（1920×1080 全屏时左边这列可用宽 ~1450px）：
-//   6 张 × 170 + 5 道间距 6 = 1050px，余 ~400px（左边这列的实际约束是【高度】不是
-//   宽度，所以余这么宽不浪费 —— 见下面那段）。
-// 【高度】才是木板图真正缺的东西：木板图 2448×2048 摆进左边这列，能占多高是被
-//   「列高 - 条子高」卡的，不是被列宽卡的；条子高 ≈ THUMB_H + 小标题(~20px) + 间距。
-//   所以想把上面的木板图要回来，只有缩 THUMB_H 这一条路（减张数只省宽度，一点高度
-//   都省不出来），而且省 1px 条高 = 木板图多 1px。THUMB_H 从 167 收到 142 就是这么来的。
-// 为什么是 6 而不是更多：缩略图要能放下一个「大大的 OK/NG」——170px 宽时色带约 47px
-// 高、字约 28px，站远一点扫一眼就看见；再小下去那个字就得凑近看，反而失去了
-// 「一眼扫过去」这个功能本来的意义。这是这条横条的下限，别再往小收了。
+// 每张缩略图的大小(px)和张数。
+//
+// 【宽度】账（1920×1080 全屏时左边这列可用宽 = 屏宽 - 边距20 - 列间距10 - 右列440
+//   = 1450px）：
+//     8 张 × 170 + 7 道间距 6 = 1402px，余 48px —— 这已经是上限了。
+//     再加到 9 张要 1578px > 1450，横条会顶出屏幕（格子是 setFixedSize，缩不了）。
+//   两个前提：现场屏是 1920 宽、右列宽还是 SCROLL_W(440)。任一变了这笔账都要重算 ——
+//   换更小的屏（1600/1366）时 8 张就可能放不下，得往回收。
+// 【高度】账 —— 为什么加张数几乎不花代价：
+//   缩略图全在同一行里，条子高 = THUMB_H + 小标题(~20px) + 间距 ≈ 170px，跟张数无关。
+//   而木板图 2448×2048 摆进左边这列，能占多高是被「列高 - 条子高」卡的，不是被列宽卡的
+//   —— 886px 高的位置它只占得到 ~1059px 宽，1450px 的列宽本来就空着 ~400px 用不上。
+//   所以从 6 张加到 8 张，木板图一像素都不会小，纯粹是把那片空白用起来。
+//   反过来说：想把木板图要回来，只有缩 THUMB_H 这一条路（减张数一点高度都省不出来），
+//   而且省 1px 条高 = 木板图多 1px。THUMB_H 从 167 收到 142 就是这么来的。
+// 为什么是 8 而不是更多、也不能更小：
+//   上限是【宽度】（见上，9 张放不下）；
+//   下限是【字号】—— 缩略图要能放下一个「大大的 OK/NG」：170px 宽时色带约 47px 高、
+//   字约 28px，站远一点扫一眼就看见；再小下去那个字就得凑近看，反而失去了「一眼扫过去」
+//   这个功能本来的意义。所以别为了多塞几张去缩 THUMB_W/THUMB_H，那是把功能缩没了。
+//   （当初定 6 张不是算出来的，宽度其实一直空着 400px。）
 // ⚠ 这三个数改小/改大都不用动别处：pushThumb 按 THUMB_W×THUMB_H 缩，格子按 THUMB_COUNT
-//   建。但张数别超过「可用宽 / (THUMB_W + 间距)」——超了横条会把左边的木板图挤窄。
+//   建，格子里的图整体左移也是按 THUMB_COUNT 写的。只有上面那笔宽度账要重算。
 static constexpr int THUMB_W     = 170;
 static constexpr int THUMB_H     = 142;   // 跟 2448×2048 同比例(1.195:1)
-static constexpr int THUMB_COUNT = 6;
+static constexpr int THUMB_COUNT = 8;
 static constexpr int THUMB_GAP   = 6;
 
 // ---- 「最小化」后留在屏幕角上的恢复小条 ----
@@ -271,8 +282,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
 
     // 「最近结果」条：THUMB_COUNT 个固定格子，最新的放最右，每来一块整体左移一格。
     // 格子一开始就全部建好（空的画成深色占位），而不是来一块加一个 —— 动态增删控件会让
-    // 布局反复重算，格子也会在补齐之前左右跳。空着的时候看得到 6 个暗框，工人一眼就
-    // 知道这里是「最近 6 块」，不用等第一块板来才知道这块地方是干嘛的。
+    // 布局反复重算，格子也会在补齐之前左右跳。空着的时候看得到一排暗框，工人一眼就
+    // 知道这里是「最近几块」（THUMB_COUNT 个），不用等第一块板来才知道这块地方是干嘛的。
     auto* thumbBox = new QWidget(this);
     auto* thumbCol = new QVBoxLayout(thumbBox);
     thumbCol->setContentsMargins(0, 0, 0, 0);
@@ -285,7 +296,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 空格子的占位图。用 QPixmap 而不是 QLabel 的文字(「—」)：QLabel::setPixmap 内部
     // 会先 clearContents()，连文字一起清掉 —— 第一块板一来，前面几个格子的「—」就没了、
     // 只剩空框。占位图跟真缩略图走同一条路（都是 setPixmap），就不会有这种不一致。
-    // 6 个格子共用这一张：QPixmap 是隐式共享的，只占一份 ~130KB。
+    // 所有格子共用这一张：QPixmap 是隐式共享的，只占一份 ~130KB。
     QPixmap placeholder(THUMB_W, THUMB_H);
     placeholder.fill(QColor(0x0c, 0x0f, 0x13));
     {
@@ -308,9 +319,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
         t->setPixmap(placeholder);
         thumbRow->addWidget(t);
         _thumbs.push_back(t);
-        _thumbPix.push_back(placeholder);   // 隐式共享：6 份只占一张的内存
+        _thumbPix.push_back(placeholder);   // 隐式共享：这么多份只占一张的内存
     }
-    // 弹簧放最后：格子从左边排起，右边剩下的 220px 留白。不居中的理由跟左上角统计
+    // 弹簧放最后：格子从左边排起，右边剩下的那点宽（1920 屏上才 48px）留白。不居中的理由跟左上角统计
     // 面板一样 —— 固定从左起，位置不随窗口宽度变，看惯了不用重新找。
     thumbRow->addStretch(1);
     thumbCol->addLayout(thumbRow);
