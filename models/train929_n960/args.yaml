@@ -5,8 +5,8 @@ data: /root/dys/YOLODataset/dataset.yaml
 epochs: 300
 time: null
 patience: 100
-batch: 16
-imgsz: 640
+batch: 8
+imgsz: 960
 save: true
 save_period: -1
 cache: false

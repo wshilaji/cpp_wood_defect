@@ -85,26 +85,34 @@ static_assert(HEIBA_MIN_CONF <= CONF_THRESHOLD,
 //
 // ⚠⚠ 顺序是这份文件里最要命的东西: 下标就是模型的 class_id, 顺序一错, 每个框都会被叫成
 //   别的类、还会拿别的类的门槛去判它 —— 而且【不会报任何错】, 只是静默把结果判错。
-//   这是本项目最容易出、最难查的一类事故, 2026-09-29 就出过一次(见下)。
+//   这是本项目最容易出、最难查的一类事故, 2026-09-29 一天里出过【两次】(见下)。
 //
-// ⚠ 2026-09-29 这份顺序改过一次。原因: 现场重训了模型(models/train_npt640/), 新引擎的
-//   names 跟旧表对不上了 —— 旧表是 dongba, dongban, jieba, shupi, ...; 新引擎是
-//   dongban, dongba, heiba, jieba, ...(头两个对调、后面整体挪位), 而且 suibian 这个类在
-//   新数据集里没有了(模型输出 14 类, 旧表是 15 个名字)。当时的表现会是:
-//     模型吐 0(破洞)   → 被叫成「死节」, 拿死节的门槛(2 个/30mm)去判它;
-//     模型吐 10(发白)  → 落到旧表的「suibian」上, 而 suibian 不参与判定 ⇒ 发白永不生效。
-//   改的只有这张表: 判定阈值、ini 键、界面行名全是【按名字】走的, 别处一处都不用动
+// ⚠ 2026-09-29 这份顺序改过两次, 两次都是换引擎逼出来的:
+//   第一次: 换成 models/train_npt640/ 那轮 —— 旧表是 dongba, dongban, jieba, shupi, ...;
+//     新引擎是 dongban, dongba, heiba, jieba, ...(头两个对调、后面整体挪位), 而且 suibian
+//     这个类在新数据集里没有了(模型输出 14 类, 旧表是 15 个名字)。当时的表现:
+//       模型吐 0(破洞)  → 被叫成「死节」, 拿死节的门槛(2 个/30mm)去判它;
+//       模型吐 10(发白) → 落到旧表的「suibian」上, 而 suibian 不参与判定 ⇒ 发白永不生效。
+//   第二次(同一天晚些时候): 换成 models/train929_n960/ 那轮(960 输入) —— 新引擎把 heiba
+//     挪到了 0, shuwen/quebian、liefeng/shupi 各自对调, 就是现在下面这个顺序。
+//     ⚠ 这一次【不能】拿第一次的经验去推: 只有前 8 位在动, 尾巴(piwenba 往后)原封不动。
+//     所以别"估着改", 一律照 confusion_matrix.png 逐行念。
+//
+//   两次改的都只有这张表: 判定阈值、ini 键、界面行名全是【按名字】走的, 别处一处都不用动
 //   (全项目按下标取类的地方只有这一张表 + postprocessor 里 cls_id→名字那一次转换)。
 //
 // 换引擎时怎么核对这张表(上线前务必做一遍, 五分钟的事):
 //   训练目录里那张 confusion_matrix.png, 坐标轴顺序【就是】模型的 class_id 顺序
 //   (Ultralytics 拿模型自己的 names 画的); models/labels.txt 应当是同一份。
 //   把这两样对着下面这个表逐行念一遍, 有对不上的先别上线。
-//   这份顺序的出处是 models/train_npt640/(2026-09-29 那轮训练) —— 是照着上面那张矩阵
-//   和 labels.txt 核对出来的, 不是猜的。
+//   这份顺序的出处是 models/train929_n960/(2026-09-29 第二轮训练) —— 照着那张矩阵和
+//   labels.txt 核对出来的, 不是猜的。
+//
+// ⚠ 换引擎和改这张表必须【同时】上: 只换引擎不改表 = 每个框叫错名字、还拿错门槛去判它;
+//   只改表不换引擎 = 一样错, 只是错的方向反过来。两个文件是绑在一起的一对。
 const std::vector<std::string> CLASSES = {
-    "dongban", "dongba", "heiba", "jieba", "quebian",
-    "shuwen", "shupi", "liefeng", "piwenba", "baowen",
+    "heiba", "dongban", "dongba", "jieba", "shuwen",
+    "quebian", "liefeng", "shupi", "piwenba", "baowen",
     "fabai", "heiban", "banwen", "banwenba"
 };
 
