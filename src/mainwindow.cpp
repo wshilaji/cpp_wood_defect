@@ -168,9 +168,15 @@ static constexpr int THUMB_GAP   = 6;
 // 所以宁可占地方也别抠。文案「返回检测界面」6 个汉字在 16px 下约 96px 宽，170 放得下。
 // 位置在 minimizeToDesktop 里按【当前屏幕的 availableGeometry】算 —— 用它而不是
 // geometry()，是因为 availableGeometry 会避开桌面任务栏/程序坞，小条不会跟它们叠。
+// 放在【屏幕右边、竖着居中】（2026-09-29 现场定的，先是右下角、中间经过一次右上角）。
+// 为什么不贴角：贴顶会压在最大化窗口的标题栏上（关闭按钮就在那条的最右边，小条是
+// WindowStaysOnTop，点下去命中的是小条 —— 工人想关浏览器反而把检测界面叫了回来）；
+// 贴底又贴着桌面任务栏那一带。右边中间两头都不碰。
+// 右边留白 16px 也正好让开窗口最右边那条滚动条（一般 ~15px 宽），不会挡住拖滚动条。
+// ⚠ 换位置就是 minimizeToDesktop 里那两行坐标的事，没有非放某处不可的理由。
 static constexpr int TAB_W      = 170;
 static constexpr int TAB_H      = 54;
-static constexpr int TAB_MARGIN = 16;   // 距屏幕可用区边缘的留白(px)
+static constexpr int TAB_MARGIN = 16;   // 距屏幕可用区【右边】的留白(px)
 
 // ---- 右侧面板宽度 ----
 // 全文件所有「放不下 / 放得下」的宽度账都按这两个数算，改宽度只改这里，别去追注释里
@@ -695,18 +701,21 @@ void MainWindow::minimizeToDesktop() {
     hide();
 
     // 小条的位置每次显示前重算：显示器换了、桌面任务栏装了拆了，availableGeometry 会变。
-    // 放右下角是个习惯选择（"回到应用"这类入口一般都在那儿），换个角就是改下面两行 ——
-    // 位置没有非放这儿不可的理由，现场嫌挡事直接挪。
+    // 【右边中间】(2026-09-29 现场定的，之前是右下角、中间经过一次右上角)。换位置就是改
+    // 下面两行 —— 没有非放某处不可的理由，现场嫌挡事直接挪。
+    // 竖着居中而不是贴角，是为了躲开那两条「别的窗口在用」的窄带：
+    //   顶边那一条是最大化窗口的标题栏（关闭按钮就在它最右边）；
+    //   底边那一条是桌面任务栏/程序坞那一带。
     // 用 availableGeometry 而不是几何尺寸，是为了自动避开桌面任务栏/程序坞：
-    // 任务栏在下面它就浮在任务栏上面，不会跟任务栏叠在一起。
+    // 面板在下、在上、在侧面都会被让开，小条不会跟它叠在一起。
     // ⚠ 用的是主屏。单屏的 kiosk 上无所谓；真接了两个屏、而全屏窗口在副屏上时，
     //   小条会跑到主屏去 —— 那时候得换成"主窗口所在的那块屏"。
     if (QScreen* scr = QGuiApplication::primaryScreen()) {
         const QRect avail = scr->availableGeometry();
         // 取 max(0, ...) 兜一下：屏幕上可用区比小条还小这种极端情况，别把坐标算成负数
         // （负坐标会被 WM 摆到屏幕外，等于按了最小化就再也点不到恢复了）。
-        _restoreTab->move(std::max(0, avail.right()  - TAB_W - TAB_MARGIN),
-                          std::max(0, avail.bottom() - TAB_H - TAB_MARGIN));
+        const int y = avail.top() + std::max(0, (avail.height() - TAB_H) / 2);
+        _restoreTab->move(std::max(0, avail.right() - TAB_W - TAB_MARGIN), y);   // 贴右、居中
     }
     _restoreTab->show();
     _restoreTab->raise();
