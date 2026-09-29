@@ -84,8 +84,9 @@ public:
     int fabaiMaxCount() const;
     int fabaiMinLenMm() const;
     /** fabai 的置信度门槛：模型的 fabai 概率大于此值才算数（0 = 关掉这道门槛）。
-     *  ⚠ 有作用的区间是 0.51~0.99：全局 CONF_THRESHOLD(0.5) 在更前面就把 ≤0.5 的检测
-     *    整个丢掉了，图上根本不会出现 conf ≤ 0.5 的框，填 0.5 以下等于没填。 */
+     *  ⚠ 有作用的区间是 0.31~0.99：全局 CONF_THRESHOLD(0.3) 在更前面就把 0.3 以下的检测
+     *    整个丢掉了，图上根本不会出现 conf < 0.3 的框，填 0.3 及以下等于没填。
+     *    （这个区间跟着 CONF_THRESHOLD 走，全局降过一次，下界也跟着降过一次。） */
     double fabaiMinConf() const;
     int minLengthMm() const;
     int minWidthMm() const;

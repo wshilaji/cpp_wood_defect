@@ -99,7 +99,9 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 // 判据现在只有一种: 【数量】。7 个类各有一个数量上限, 超了判 NG:
 //   jieba 活节 / heiba 小油疤 —— 没有尺寸门槛, 进来了的全算进数量。
 //       (heiba 另有一道【检测下限】, 见 process() 里的 minDetectConf: 它比全局低,
-//        0.25 以上就放进来, 所以 0.25~0.5 那一档也算它的数量。jieba 没有, 就是全局。)
+//        0.25 以上就放进来, 所以 0.25 到全局那一档也算它的数量。jieba 没有, 就是全局 ——
+//        2026-09-29 全局从 0.5 降到 0.3 之后, jieba 直接把 0.3~0.5 这一段也收进计数,
+//        它是这一改最直接受影响的类, 盯 JIEBA_MAX_COUNT。)
 //   dongba 死节 / dongban 破洞 / quebian 缺边 / shupi 树皮 / fabai 发白 ——
 //       数之前先过一道【尺寸门槛】: 检测框最长边换算成毫米, 短于门槛的不计数
 //       (工人界面填, 0=不过滤)。这是【过滤】不是【拒绝】: 小的不会把板子判死,

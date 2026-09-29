@@ -479,9 +479,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 用 QDoubleSpinBox 而不是 QSpinBox: 这个数就是图上标签印的那个数(比如 fabai 0.58),
     // 显成 0.65 工人能直接跟框上的数字比; 显成「65 %」就得在心里换算一次。
     // 范围从 0.00 起: 0 = 关掉这道门槛(跟尺寸门槛「0 = 不过滤」同一个约定)。
-    // ⚠ 0.51 以下的数【等于没填】—— 全局 CONF_THRESHOLD(0.5) 在更前面就把 ≤0.5 的检测
-    //   整个丢掉了, 图上根本不会出现 conf ≤ 0.5 的框。留着 0~0.5 这段是为了「关掉」这个
+    // ⚠ 0.31 以下的数【等于没填】—— 全局 CONF_THRESHOLD(0.3) 在更前面就把 0.3 以下的检测
+    //   整个丢掉了, 图上根本不会出现 conf < 0.3 的框。留着 0~0.3 这段是为了「关掉」这个
     //   语义, 不是为了让人在这一段里调。
+    //   (这个下界跟着 CONF_THRESHOLD 走: 全局降过一次, 它也跟着降过一次。)
     {
         auto* box = new QWidget;
         auto* row = new QHBoxLayout(box);
