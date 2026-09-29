@@ -492,7 +492,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
         lbl->setStyleSheet("color:#c8c8c8;");
         _fabaiMinConfSpin = new QDoubleSpinBox;
         _fabaiMinConfSpin->setRange(0.00, 0.99);
-        _fabaiMinConfSpin->setSingleStep(0.05);   // 0 → 0.65 正好 13 步, 整步能踩到
+        // 0.01: 跟显示精度(setDecimals(2))对齐 —— 显示 0.65, 按钮一下就走 0.01, 键盘敲
+        // 也是两位小数, 三者一致。原来是 0.05(一下走 5 个显示位, 现场嫌跨得大)。
+        // 0.65 照样落在整步上(第 65 步), 出厂值不受影响。
+        _fabaiMinConfSpin->setSingleStep(0.01);
         _fabaiMinConfSpin->setDecimals(2);
         _fabaiMinConfSpin->setValue(0.65);
         row->addWidget(lbl, 1);
