@@ -73,45 +73,51 @@ sudo systemctl disable --now wood-defect-detector && sudo rm /etc/systemd/system
   （GDM 登录前后显示号会变，写死 :0 会连不上）。
 - 服务起不来先查日志：`sudo journalctl -u wood-defect-detector -n 50 --no-pager`。
 
-### 界面点"退出"后多久才会自动拉起来
+### 界面"最小化"：让出桌面但不停检测
 
-**期望行为**：点"退出"是为了腾出桌面（开 RustDesk 让远程协助连进来、改网络设置等），
-全屏置顶的 kiosk 窗口必须马上消失；但又不希望它一直不起来，所以 **2.5 分钟**后自动恢复。
+> 这一节 2026-09-29 重写过。原来这里讲的是「界面点‘退出’后多久才会自动拉起来」——
+> 那套机制（hide + 原地倒数 150 秒 + 靠 systemd 拉起）连同那个「退出」按钮一起删了。
 
-**实现**：延时不在 systemd 里，在程序里（`Config::EXIT_RESTART_DELAY_SEC`，单位秒，
-默认 150 = 2.5 分钟）。`RestartSec` 保持 3 秒不动，好处是**崩溃恢复仍然只要 3 秒**——
-真挂了是产线停机的紧急情况，不能跟着一起等下去。
+**期望行为**：工人要腾出桌面用浏览器 / 开 RustDesk 让远程协助连进来 / 改网络设置。
+全屏置顶的 kiosk 窗口必须让开，但**检测不能停**——产线还在过板。
 
-点"退出"之后的顺序：
+**现在的做法**：界面右下角那个按钮是「最小化」（原来叫「退出」）。点一下：
 
 | 步骤 | 发生什么 |
 |---|---|
-| 1 | `win.hide()` —— 全屏置顶窗口从 X11 unmap，桌面立刻可用（不是最小化） |
-| 2 | 停 PLC / 停相机 / 等存图线程收尾（此时界面已看不见） |
-| 3 | 出 try 作用域：推理引擎、PlcLink、SaveWorker 析构，显存释放、线程 join |
-| 4 | 进程**不退出**，原地倒数 2.5 分钟（每秒查一次信号） |
-| 5 | 进程正常退出 → systemd 按 `RestartSec=3` 拉起，界面回来 |
+| 1 | `hide()` —— 全屏置顶窗口从 X11 unmap，桌面立刻可用 |
+| 2 | 屏幕右下角出现一个小条「返回检测界面」（`_restoreTab`，一直置顶） |
+| 3 | 点那个小条 → 小条消失，`showFullScreen()` 回到全屏置顶 |
 
-第 4 步是整件事的关键：systemd 是 `Type=simple`，只看主进程死没死，**进程活着就不会重启**，
-所以这 2.5 分钟界面不会回来。这段时间进程里没有窗口、没有相机、没有 GPU 占用、没有后台线程，
-纯粹是个"闹钟"。
+**进程从头到尾没停过**：相机继续取流、PLC 继续收触发、推理继续跑、存图继续写。
+所以最小化期间过板**照样判 OK/NG**，`total`/`ng` 计数照涨——这点跟老的「退出」是本质区别
+（老的会停 PLC / 停相机 / 释放显存，那 2.5 分钟里过板不判）。
 
-> **注意**：点"退出"就是真的停检测——相机不取流、PLC 不响应、不推理，这 2.5 分钟里
-> **过板不会判 OK/NG**。现在的行为也是这样（退出即停），只是以前 3 秒就重启、现在 2.5 分钟。
-> 如果产线那 2.5 分钟还在过板，这是不行的。
+几个实现上的选择，改这块之前先看一眼：
 
-**常用操作**（两个都是立即生效，不用等满 2.5 分钟，因为倒数循环每秒查一次信号）：
+- **用 `hide()` 不用 `showMinimized()`**。主窗口是 `Frameless + WindowStaysOnTop +
+  showFullScreen()`，`showMinimized()` 在这种组合下行为由 WM 决定，有的 WM 直接不理它——
+  那窗口还盖着桌面、小条出现在它下面，等于按了没反应还点不到恢复。`hide()` 是 unmap，
+  一定会消失，恢复完全由我们自己的小条负责，不赌 WM。
+- **小条是顶层窗口**（`parent = nullptr`）。挂成主窗口的子控件不行：主窗口一藏，子控件
+  一起不可见，就没有恢复入口了。
+- 小条设了 `Qt::WA_QuitOnClose, false`。不然万一它被 close（而不是 hide），Qt 会以为
+  「最后一个窗口关了，该退出程序」——正好撞在「主窗口已藏、只剩小条」这个状态上，
+  一关就把整个检测程序带走了。
+- 位置每次显示前按**当前屏幕的 `availableGeometry()`** 重算（不是 `geometry()`，前者会
+  避开任务栏/程序坞），尺寸/留白在 `src/mainwindow.cpp` 的 `TAB_W/TAB_H/TAB_MARGIN`。
+
+**退出程序现在只能靠 systemd**（或者崩溃）：主循环里没有任何界面来的退出条件了，
+`running` 只在收到 SIGINT/SIGTERM 时置 false。恢复时间就是 `RestartSec`（3 秒），
+主动重启和崩溃恢复一致：
 
 ```bash
-sudo systemctl restart wood-defect-detector   # 界面提前回来
-sudo systemctl stop wood-defect-detector      # 让界面一直别回来（维护完再 start）
+sudo systemctl restart wood-defect-detector   # 重启界面（3 秒回来）
+sudo systemctl stop wood-defect-detector      # 停掉，维护完再 start
 ```
 
-**调整时长**：改 `include/config.h` 里的 `EXIT_RESTART_DELAY_SEC` 后重新编译（改成 `0`
-就是恢复成"退出即走、3 秒重启"的老行为）。
-
-**验证**：点"退出"看窗口消失，`sudo journalctl -u wood-defect-detector -n 20` 会看到
-`[Exit] 界面已隐藏, 150 秒后再由 systemd 自动拉起`；再 `systemctl start` 一下就能提前叫回来。
+**验证**：点「最小化」看窗口消失、右下角出现小条，此时产线过板看 `total` 是否还在涨
+（涨 = 检测没停）；再点小条看是否回到全屏置顶。
 
 ### 界面"关机 / 重启电脑"按钮没反应
 

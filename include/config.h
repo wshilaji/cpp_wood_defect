@@ -146,12 +146,16 @@ const std::vector<double> DIST_COEFFS = {0.0, 0.0, 0.0, 0.0, 0.0};
 //   而 DONGBA_MIN_LEN_MM 这种「绝对毫米」门槛直接跟着偏（长度是线性，比面积好一点）。
 constexpr float MM_PER_PX = DISTANCE_MM / FX;   // ≈ 0.5477 mm/px
 
-// ---- 界面「退出」后的冷却时间 ----
-// 点界面「退出」是为了腾出桌面(开 RustDesk / 远程协助 / 改网络)。程序收到退出请求
-// 后先 hide() 掉全屏置顶窗口让桌面立刻可用, 但**进程不立刻结束**, 而是原地等这么久
-// 再退出。systemd 是 Type=simple+Restart=always, 看进程还活着就不会重启, 所以
-// "点退出 → 界面重新拉起"的总延时≈本值。崩溃路径不走这段等待(RestartSec 3s 恢复)。
-constexpr int   EXIT_RESTART_DELAY_SEC = 150;   // 2.5 分钟
+// ---- 界面「退出」后的冷却时间: 2026-09-29 删掉 ----
+// 原来界面有个「退出」按钮: 收到退出请求后 hide() 掉全屏窗口让桌面立刻可用, 但进程
+// 不结束, 原地等 EXIT_RESTART_DELAY_SEC(150s) 再退出 —— 卡这段时间是为了让 systemd
+// (Type=simple+Restart=always, 看进程还活着就不重启)别马上把全屏窗口拉回来, 好腾出
+// 桌面开 RustDesk / 浏览器 / 改网络。
+// 现在这一套整个删了, 换成界面上的「最小化」: 窗口直接藏起来, 屏幕角上留一个小条点
+// 它回来, 进程照常跑(相机/PLC/推理都不断)。同一个目的(别让全屏软件占着桌面), 但
+// 不用停检测、也不用等 150 秒、更不用靠 systemd 拉起。
+// ⇒ 常量和那圈逐秒倒数一起作废; 现在进程只在收到 SIGINT/SIGTERM 时退出, 由 systemd 的
+//   RestartSec(3s) 管恢复, 崩溃和主动重启的恢复时间一致。
 
 // ---- 输出 ----
 constexpr bool  SAVE_IMAGES   = true;

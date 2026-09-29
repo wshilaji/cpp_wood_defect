@@ -45,9 +45,10 @@
 
 static std::atomic<bool> running{true};
 
-// 收到 SIGINT/SIGTERM 置位。退出后的冷却等待(见 EXIT_RESTART_DELAY_SEC)靠它打断,
-// 否则 systemctl stop/restart 要干等到冷却结束, 长到会被 systemd 判超时 SIGKILL。
-static std::atomic<bool> g_sigStop{false};
+// 原来这里还有个 g_sigStop: 信号处理里置位, 给「界面点退出」之后那段 150 秒冷却倒数
+// 用来中途醒来(否则 systemctl stop/restart 要干等到倒数结束, 长到被 systemd 判超时
+// SIGKILL)。那段倒数 2026-09-29 连「退出」按钮一起删了(换成「最小化」), 它唯一的读者
+// 就没了 —— 只写不读的状态是死代码, 一并删掉。running 已经在干同一件事。
 
 // ============================================================
 // 全局指针 + 崩溃清理
@@ -83,7 +84,6 @@ static void on_signal(int sig) {
     if (sig == SIGINT || sig == SIGTERM) {
         LOGE << "[CrashGuard] " << name << " 收到，正在退出...";
         running = false;
-        g_sigStop = true;   // 打断退出后的冷却等待
         cleanup_all();
         return;
     }
@@ -378,8 +378,10 @@ int main(int argc, char** argv) {
             // 保持 UI 响应（事件泵）
             app.processEvents();
 
-            // 退出检查放在循环最前面：否则空闲(等 PLC 触发)时会 continue 跳到底部检查之前
-            if (win.exitRequested()) { running = false; break; }
+            // 循环里【没有】界面来的退出条件了(2026-09-29)：界面那个「退出」按钮换成了
+            // 「最小化」，藏窗口但不停检测。所以 running 只在收到 SIGINT/SIGTERM 时被置
+            // false（见 cleanup_all），也就是只有 systemd stop/restart/poweroff 能停它。
+            // ⚠ 换句话说：界面藏起来之后，检测仍然照跑，PLC 触发照收 —— 这是有意的。
 
             // 相机健康管理：未连接则限频(1s)后台重连；UI 相机灯实时同步
             camGuard.poll();
@@ -580,15 +582,13 @@ int main(int argc, char** argv) {
 
         }
 
-        // 先藏窗口收尾: 退出是为了腾桌面(开 RustDesk / 远程协助 / 改网络), 藏窗口要
-        // 立刻, 不能等 saver.stop() 把排队存图写完(可能好几秒), 那几秒全屏置顶还盖着。
-        win.hide();
-        app.processEvents();
-
+        // 设备收尾。这里【不再】先 win.hide() —— 那是给原来的「退出」腾桌面用的。
+        // 现在退出只可能是收到信号(systemd stop/restart/关机), 窗口跟着进程一起消失
+        // 就够了; 提前藏一下反而在 systemctl restart 时先闪一下桌面、再等 3 秒才回来。
         plc.stop();
         cam.stop();
         saver.stop();   // 等后台把排队中的存图写完再退出
-        // 下面冷却等待期间还可能收到信号, cleanup_all() 会经 g_plc/g_cam 去停设备。
+        // 收尾这段时间还可能收到信号, cleanup_all() 会经 g_plc/g_cam 去停设备。
         // plc 随本 try 作用域析构, 之后信号再进来就是解引用已析构对象 → 必须清空指针。
         // (cam 在外层作用域不会析构, 但句柄已关, 一并清掉省得误判为"还在跑")
         g_plc = nullptr;
@@ -609,34 +609,17 @@ int main(int argc, char** argv) {
         return -6;
     }
 
-    // ============================================================
-    // 界面「退出」后的冷却等待
-    // ============================================================
-    // 走到这里说明是界面点「退出」的正常退出(异常/崩溃在上面已 return, 不走这段)。
+    // 走到这里就是正常收尾(异常/崩溃在上面已 return, 不走这段)。
     // 设备已全停: PlcLink(线程 join)/SaveWorker(线程 join)/推理引擎 随 try 作用域析构,
     // 引擎显存随之释放; 相机 stop() 里 closeDevice() 已 DestroyHandle 释放句柄。
-    // 所以进程现在只剩 Qt 窗口对象在空转, 不占相机、不占 GPU、不占后台线程。
     //
-    // 为什么不能直接 return: systemd 是 Restart=always, 进程一结束就按 RestartSec(3s)
-    // 把界面拉回来。而要开 RustDesk 让远程协助连进来、或改网络设置, 几秒钟根本不够,
-    // 全屏置顶窗口一回来桌面又被盖住。所以这里不结束进程, 原地等 EXIT_RESTART_DELAY_SEC:
-    // systemd Type=simple 只看主进程死没死, 进程活着就不会重启 → 这段时间界面不会回来。
-    // 等够了进程正常退出, systemd 才按 RestartSec=3 拉起, 总延时≈配置值。
-    // 崩溃路径不受影响: 段错误/OOM 直接死, 产线恢复仍是 3 秒。
-    LOGI << "[Exit] 界面已隐藏, " << Config::EXIT_RESTART_DELAY_SEC
-         << " 秒后再由 systemd 自动拉起"
-         << " (想提前恢复: sudo systemctl restart wood-defect-detector)";
-
-    // 逐秒等而不是一次 sleep 到底: 收到 SIGTERM 要能立刻走, 否则 `systemctl stop/restart`
-    // 会卡到 systemd 的 TimeoutStopSec(默认 90s) 超时被 SIGKILL, 白等一场。
-    for (int left = Config::EXIT_RESTART_DELAY_SEC; left > 0; --left) {
-        if (g_sigStop) {
-            LOGI << "[Exit] 收到停止信号, 结束等待立即退出";
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-
-    LOGI << "[Exit] 等待结束, 进程退出";
+    // 2026-09-29 起这里【没有冷却等待了】。原来有一段"进程不结束、原地倒数 150 秒"的
+    // 逻辑, 是为了让界面点「退出」之后 systemd 别马上把全屏窗口拉回来、好腾出桌面开
+    // RustDesk / 浏览器 / 改网络(见 config.h 里那段 tombstone)。
+    // 界面那个按钮现在换成了「最小化」: 藏窗口但进程照跑, 想用桌面直接用、想回来点屏幕
+    // 角上的小条 —— 同一个目的, 不用停检测、不用等、不用靠 systemd 拉起。所以那段
+    // 倒数连同 Config::EXIT_RESTART_DELAY_SEC 一起删了, 直接返回。
+    // ⇒ 恢复时间现在就由 systemd 的 RestartSec(3s) 决定, 主动重启和崩溃恢复一致。
+    LOGI << "[Exit] 收尾完成, 进程退出";
     return 0;
 }

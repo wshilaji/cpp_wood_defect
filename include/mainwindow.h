@@ -10,6 +10,7 @@
 class QLabel;
 class QSpinBox;
 class QCheckBox;
+class QPushButton;
 
 /**
  * 木板瑕疵检测 — Qt 操作界面
@@ -19,7 +20,9 @@ class QCheckBox;
  *   setGpuTemp/setCpuTemp/setMemoryPct/setDiskPct（系统状态，空闲时刷新）
  * 工人设置（各类数量 / 面积占比 / 板长板宽 / 存图比例 / 曝光增益）用 QSpinBox，
  * 主循环轮询读取后下发。
- * 手动拍照 / 退出 通过按钮置位标志，主循环轮询消费（takeManualTrigger/exitRequested）。
+ * 手动拍照 通过按钮置位标志，主循环轮询消费（takeManualTrigger）。
+ * 「最小化」不走主循环：点一下就把窗口藏起来、屏幕角上留一个小条（_restoreTab）点它
+ * 回来。检测全程照跑 —— 相机/PLC/推理都不断，只是屏幕让出来了。见 minimizeToDesktop。
  */
 class MainWindow : public QWidget {
 public:
@@ -88,13 +91,19 @@ public:
 
     // ---- 按钮（主循环轮询消费） ----
     bool takeManualTrigger();      // true=工人点了手动拍照（消费一次）
-    bool exitRequested() const;
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
 
 private:
     void updateImageDisplay();
+    /** 「最小化」：把全屏窗口藏起来让出桌面，并在屏幕角上显示 _restoreTab 小条。
+     *  检测不受影响（相机/PLC/推理都还在跑）—— 这是它跟原来那个「退出」的本质区别：
+     *  同一个目的（别让全屏软件占着桌面），但不断检测、不用等、不用靠 systemd 拉起。 */
+    void minimizeToDesktop();
+    /** 点小条回来：藏掉小条、全屏置顶恢复。 */
+    void restoreFromDesktop();
+    void buildRestoreTab();   // 建小条本体（构造时调一次，建完先藏着）
     void doShutdown();   // 一键关机：确认后调用 systemctl poweroff
     void doReboot();     // 一键重启：确认后调用 systemctl reboot
     bool verifySavePassword();   // 弹密码框，返回密码是否正确
@@ -151,7 +160,10 @@ private:
 
     QImage    _lastImage;
     bool      _manual = false;
-    bool      _exit   = false;
+    // 「最小化」时留在屏幕角上的恢复小条。构造函数里建好先藏着，最小化时显示。
+    // 顶层窗口（parent 传 nullptr），不是 this 的子控件 —— 主窗口藏起来之后子控件会
+    // 跟着一起不可见，那就没法当恢复入口了。
+    QPushButton* _restoreTab = nullptr;
     bool      _camRunning = false;   // 相机是否在运行（setCamRunning 写入）
     bool      _camFault   = false;   // 相机是否故障（setCamFault 写入，红灯）
 };

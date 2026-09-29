@@ -22,6 +22,9 @@
 #include <QFrame>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QGuiApplication>
+#include <QScreen>
+#include <algorithm>   // std::max（小条坐标别算成负数）
 
 // ============================================================
 // cv::Mat(BGR) → QImage（深拷贝，防止原图被后续处理改动）
@@ -148,6 +151,15 @@ static constexpr int THUMB_W     = 170;
 static constexpr int THUMB_H     = 142;   // 跟 2448×2048 同比例(1.195:1)
 static constexpr int THUMB_COUNT = 6;
 static constexpr int THUMB_GAP   = 6;
+
+// ---- 「最小化」后留在屏幕角上的恢复小条 ----
+// 尺寸比按钮行的键还大一圈：它是屏幕上唯一一个「要把界面叫回来」的入口，点不中就回不来，
+// 所以宁可占地方也别抠。文案「返回检测界面」6 个汉字在 16px 下约 96px 宽，170 放得下。
+// 位置在 minimizeToDesktop 里按【当前屏幕的 availableGeometry】算 —— 用它而不是
+// geometry()，是因为 availableGeometry 会避开桌面任务栏/程序坞，小条不会跟它们叠。
+static constexpr int TAB_W      = 170;
+static constexpr int TAB_H      = 54;
+static constexpr int TAB_MARGIN = 16;   // 距屏幕可用区边缘的留白(px)
 
 // ---- 右侧面板宽度 ----
 // 全文件所有「放不下 / 放得下」的宽度账都按这两个数算，改宽度只改这里，别去追注释里
@@ -582,14 +594,17 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     snap->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:white;"
                           "background:#2e8b57; border-radius:6px;"));
-    auto* exit = new QPushButton(QString::fromUtf8("退出"), this);
-    exit->setStyleSheet(
+    // 最小化(2026-09-29 顶掉原来的「退出」)。颜色刻意用不刺眼的蓝灰, 不用原来那个红:
+    // 红在这个界面里是「会造成后果」的意思(退出=停检测、关机、重启), 而最小化随时能点
+    // 回来、检测一秒都不停, 配红色会让工人以为按了会出事、反而不敢用。
+    auto* minimize = new QPushButton(QString::fromUtf8("最小化"), this);
+    minimize->setStyleSheet(
         QString::fromUtf8("font-size:16px; font-weight:bold; padding:9px 6px; color:white;"
-                          "background:#c0392b; border-radius:6px;"));
+                          "background:#2f5a8f; border-radius:6px;"));
     btnRow->addWidget(snap, 3);
-    btnRow->addWidget(exit, 2);
-    // 拍照/退出 与 关机/重启 之间留一道空档：同处一行后全靠这点间距分组，
-    // 没有它「退出」和「关机」会挨着，误触代价不小。
+    btnRow->addWidget(minimize, 2);
+    // 拍照/最小化 与 关机/重启 之间留一道空档：同处一行后全靠这点间距分组，
+    // 没有它「最小化」和「关机」会挨着，误触代价不小。
     btnRow->addSpacing(16);
     auto* shutdownBtn = new QPushButton(QString::fromUtf8("关机"), this);
     shutdownBtn->setStyleSheet(
@@ -626,10 +641,74 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
         QPushButton:hover { background:#4a5360; }
     )"));
 
+    // 恢复小条：构造时就建好、先藏着。放在这里（而不是最小化时现建）是因为它要按屏幕
+    // 尺寸定位，而定位这件事放在构造期做一次就够，也让「什么时候会有这个窗口」变得确定。
+    buildRestoreTab();
+
     connect(snap, &QPushButton::clicked, this, [this] { _manual = true; });
-    connect(exit, &QPushButton::clicked, this, [this] { _exit = true; });
+    connect(minimize, &QPushButton::clicked, this, [this] { minimizeToDesktop(); });
+    connect(_restoreTab, &QPushButton::clicked, this, [this] { restoreFromDesktop(); });
     connect(shutdownBtn, &QPushButton::clicked, this, [this] { doShutdown(); });
     connect(rebootBtn,   &QPushButton::clicked, this, [this] { doReboot(); });
+}
+
+// ============================================================
+// 最小化 / 恢复
+// ============================================================
+void MainWindow::buildRestoreTab() {
+    // 顶层窗口：parent 传 nullptr。挂成 this 的子控件不行 —— 主窗口一藏，子控件跟着
+    // 一起不可见，那就没有恢复入口了。
+    // 因此它也不归 this 管、不需要在析构里删：它的寿命就是这个进程的寿命（主窗口也是），
+    // 进程退出时由 QApplication 统一收掉。别改成 setParent(this)。
+    _restoreTab = new QPushButton(QString::fromUtf8("返回检测界面"), nullptr);
+    _restoreTab->setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
+                               Qt::WindowStaysOnTopHint);
+    _restoreTab->setFixedSize(TAB_W, TAB_H);
+    _restoreTab->setStyleSheet(
+        QString::fromUtf8("font-size:16px; font-weight:bold; padding:6px; color:white;"
+                          "background:#2e8b57; border:2px solid #7fe0a8; border-radius:8px;"));
+    // 这条很关键：小条是「关掉它」而不是「藏起来」时（比如以后有人给它加了关闭动作、
+    // 或者某个 WM 替它发了 close），Qt 默认认为最后一个窗口关了就该退出程序 —— 那正好
+    // 撞在「主窗口已藏、只剩小条」这个状态上，一关就把整个检测程序带走了。
+    _restoreTab->setAttribute(Qt::WA_QuitOnClose, false);
+    _restoreTab->hide();
+}
+
+void MainWindow::minimizeToDesktop() {
+    if (!_restoreTab) return;
+
+    // 用 hide() 而不是 showMinimized()：主窗口是 Frameless + WindowStaysOnTop +
+    // showFullScreen()，showMinimized() 在这种组合下由 WM 决定行为，有的 WM 直接不理它
+    // —— 那窗口还盖着桌面，而小条出现在它下面，等于按了没反应还点不到恢复。
+    // hide() 是 unmap，一定会消失，恢复完全由我们自己的小条负责，不赌 WM。
+    hide();
+
+    // 小条的位置每次显示前重算：显示器换了、桌面任务栏装了拆了，availableGeometry 会变。
+    // 放右下角是个习惯选择（"回到应用"这类入口一般都在那儿），换个角就是改下面两行 ——
+    // 位置没有非放这儿不可的理由，现场嫌挡事直接挪。
+    // 用 availableGeometry 而不是几何尺寸，是为了自动避开桌面任务栏/程序坞：
+    // 任务栏在下面它就浮在任务栏上面，不会跟任务栏叠在一起。
+    // ⚠ 用的是主屏。单屏的 kiosk 上无所谓；真接了两个屏、而全屏窗口在副屏上时，
+    //   小条会跑到主屏去 —— 那时候得换成"主窗口所在的那块屏"。
+    if (QScreen* scr = QGuiApplication::primaryScreen()) {
+        const QRect avail = scr->availableGeometry();
+        // 取 max(0, ...) 兜一下：屏幕上可用区比小条还小这种极端情况，别把坐标算成负数
+        // （负坐标会被 WM 摆到屏幕外，等于按了最小化就再也点不到恢复了）。
+        _restoreTab->move(std::max(0, avail.right()  - TAB_W - TAB_MARGIN),
+                          std::max(0, avail.bottom() - TAB_H - TAB_MARGIN));
+    }
+    _restoreTab->show();
+    _restoreTab->raise();
+    _restoreTab->activateWindow();
+}
+
+void MainWindow::restoreFromDesktop() {
+    if (_restoreTab) _restoreTab->hide();
+    // 回到全屏置顶。不用再设一遍 windowFlags（构造时设过、从没改过），
+    // showFullScreen() 对已经建好的窗口会直接按当前 flags 重新映射成全屏。
+    showFullScreen();
+    raise();
+    activateWindow();
 }
 
 // ============================================================
@@ -832,8 +911,6 @@ bool MainWindow::takeManualTrigger() {
     if (_manual) { _manual = false; return true; }
     return false;
 }
-
-bool MainWindow::exitRequested() const { return _exit; }
 
 // ============================================================
 // 一键关机：确认后调用 systemctl poweroff
