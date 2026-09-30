@@ -21,8 +21,9 @@ public:
                                 cv::Mat& frame, const cv::Size& size);
 
     /** 整体 NG 判定。全部按【数量】判：jieba/heiba 不管大小全算，dongba/dongban/
-     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（fabai 还多一道置信度门槛，
-     *  见 fabaiMinConf）；dongban 另有第二道更严的数量规则（大破洞或大油疤，门槛/上限见
+     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（fabai/shupi 还多一道置信度
+     *  门槛，见 fabaiMinConf/shupiMinConf）；dongban 另有第二道更严的数量规则
+     *  （大破洞或大油疤，门槛/上限见
      *  dongbanBigMinLenMm / dongbanBigMaxCount）；板长/板宽按测得尺寸；其余类默认 OK。
      *  reason 输出 NG 原因。
      *  ⚠ 2026-09-23 起本项目【没有面积规则了】—— dongban/quebian/shupi/fabai 原本都按
@@ -45,8 +46,8 @@ public:
     // 判定用的 7 个类全是「数量」规则：MAX_COUNT 是数量上限，MIN_LEN_MM 是尺寸门槛
     // （检测框最长边换算成毫米，短于此值的不计数，0 = 不过滤）。jieba/heiba 没有门槛这一半。
     // 尺寸门槛的毫米换算是标定值（config.h MM_PER_PX），相机装高装低它就偏 —— 见那里的注释。
-    // FABAI_MIN_CONF 是另一种门槛（模型置信度，不是尺寸），只有 fabai 有这个 ——
-    // 它也是本项目唯一一道不看框大小、只看模型把握的门槛。
+    // *_MIN_CONF 是另一种门槛（模型置信度，不是尺寸）：fabai 和 shupi 各有一道 ——
+    // 它俩是本项目仅有的两道不看框大小、只看模型把握的门槛。
 
     void setJiebaMaxCount(int n) { _jieba_max_count = n; }
     int  jiebaMaxCount() const   { return _jieba_max_count; }
@@ -79,16 +80,21 @@ public:
     int  shupiMaxCount() const   { return _shupi_max_count; }
     void setShupiMinLenMm(int mm) { _shupi_min_len_mm = mm; }
     int  shupiMinLenMm() const    { return _shupi_min_len_mm; }
+    /** shupi 的【置信度门槛】(2026-09-30 加的)：形状跟下面 fabai 那道完全一样
+     *  （同一张表 minConfFor、同一处口径 countsTowardRule），只是换了个类。
+     *  0 = 关掉这道门槛。出厂那个数（现场定的）见 config.h 的 SHUPI_MIN_CONF。 */
+    void setShupiMinConf(double c) { _shupi_min_conf = c; }
+    double shupiMinConf() const    { return _shupi_min_conf; }
 
     void setFabaiMaxCount(int n) { _fabai_max_count = n; }
     int  fabaiMaxCount() const   { return _fabai_max_count; }
     void setFabaiMinLenMm(int mm) { _fabai_min_len_mm = mm; }
     int  fabaiMinLenMm() const    { return _fabai_min_len_mm; }
     /** fabai 的【置信度门槛】：模型的 fabai 概率不高于此值的不算数（0 = 关掉这道门槛，
-     *  跟尺寸门槛的 0 一个意思）。界面上是「发白概率大于」那个框。
+     *  跟尺寸门槛的 0 一个意思）。界面上是「发白概率(置信度)」那个框。
      *  ⚠ 它跟 MIN_LEN_MM 那类尺寸门槛不是一回事：尺寸是从框上量出来的、跟着相机标定走；
      *    置信度是模型自己给的分、跟标定无关。两道门槛是「且」——都过了才算数。
-     *  为什么单给 fabai 开这一道：见 config.h 的 FABAI_MIN_CONF。 */
+     *  为什么最早给 fabai 开这一道：见 config.h 的 FABAI_MIN_CONF。 */
     void setFabaiMinConf(double c) { _fabai_min_conf = c; }
     double fabaiMinConf() const    { return _fabai_min_conf; }
 
@@ -144,6 +150,7 @@ private:
     int   _heiba_max_count        = Config::HEIBA_MAX_COUNT;
     int   _shupi_max_count        = Config::SHUPI_MAX_COUNT;
     int   _shupi_min_len_mm       = Config::SHUPI_MIN_LEN_MM;
+    double _shupi_min_conf        = Config::SHUPI_MIN_CONF;
     int   _fabai_max_count        = Config::FABAI_MAX_COUNT;
     int   _fabai_min_len_mm       = Config::FABAI_MIN_LEN_MM;
     double _fabai_min_conf        = Config::FABAI_MIN_CONF;

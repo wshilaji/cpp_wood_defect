@@ -493,6 +493,7 @@ int main(int argc, char** argv) {
             post.setQuebianMinLenMm(win.quebianMinLenMm());
             post.setShupiMaxCount(win.shupiMaxCount());
             post.setShupiMinLenMm(win.shupiMinLenMm());
+            post.setShupiMinConf(win.shupiMinConf());
             post.setFabaiMaxCount(win.fabaiMaxCount());
             post.setFabaiMinLenMm(win.fabaiMinLenMm());
             post.setFabaiMinConf(win.fabaiMinConf());

@@ -75,9 +75,10 @@ static_assert(HEIBA_MIN_CONF <= CONF_THRESHOLD,
 //   heiba   小油疤 —— 黑色油滴在板面, 板子不碎; 单个没事, 数量多了才扔
 //   dongban 破洞   —— 节扣掉了板子被穿透, 底下黑传送带透出来; **大油疤也标成这一类**
 //   quebian 缺边
-//   shupi   树皮   —— 板面带树皮; 2026-09-23 起按数量 + 尺寸门槛判(原为面积和占比)
-//   fabai   发白   —— 2026-09-23 新加的类, 按数量 + 尺寸门槛判, 另有一道置信度门槛
-//                      (全项目唯一一道, 见下面 FABAI_MIN_CONF); 待现场补一句这个类长什么样
+//   shupi   树皮   —— 板面带树皮; 2026-09-23 起按数量 + 尺寸门槛判(原为面积和占比),
+//                      2026-09-30 起另有一道置信度门槛(见下面 SHUPI_MIN_CONF)
+//   fabai   发白   —— 2026-09-23 新加的类, 按数量 + 尺寸门槛判, 另有置信度门槛
+//                      (见下面 FABAI_MIN_CONF, 最早的一道); 待现场补一句这个类长什么样
 // 其余(shuwen/piwenba/baowen/liefeng/heiban/banwen/banwenba)
 // 目前只在图上画框显示, 不参与 NG 判定 —— 判定逻辑见 postprocessor.cpp 的 isNG()。
 // 注意下面 SCRATCH_NG_LEN / SCRATCH_ASPECT 是给纹类(shuwen/piwenba/baowen)准备的,
@@ -179,9 +180,20 @@ constexpr int   QUEBIAN_MIN_LEN_MM = 30;     // quebian 门槛(mm):最长边短�
 // 出现的块数, 实际上等于不判), 门槛给现场标准 30。现场调好的数会写进 config.ini 覆盖。
 constexpr int   SHUPI_MAX_COUNT  = 99;       // shupi 树皮:算数的块数 > 此值判 NG
 constexpr int   SHUPI_MIN_LEN_MM = 30;       // shupi 门槛(mm):最长边短于此值不计数
+// shupi 的【置信度门槛】(2026-09-30 加的) —— 形状跟下面 FABAI_MIN_CONF 那一段一模一样
+// (同一张表 postprocessor 的 minConfFor、同一处口径 countsTowardRule), 只是换了个类:
+// 模型的 shupi 概率不高于这个值的, 那一块不算树皮(也就进不了 SHUPI_MAX_COUNT)。
+// 0.4 是现场 2026-09-30 定的数 —— 它跟发白那个 0.65 不是一套理由, 现场没说为什么是
+// 0.4, 别在这条注释里替他们编一个。(这道门槛上线当天先给的是 0 = 关掉, 当天就按现场
+// 的话改成了 0.40。)
+// ⚠ 0 = 关掉这道门槛, 跟尺寸门槛的「0 = 不过滤」是同一个约定 —— 界面上填 0 就是不卡。
+//    (这一档正好也起着「反悔开关」的作用: 树皮数量突然少了、怀疑是它卡的, 填 0 先排掉它。)
+// 界面上是「树皮概率(置信度)」那个框(跟发白那个同一行), 口径也是【大于】(等于不算)。
+constexpr float SHUPI_MIN_CONF   = 0.40f;
 constexpr int   FABAI_MAX_COUNT  = 99;       // fabai 发白:算数的块数 > 此值判 NG
 constexpr int   FABAI_MIN_LEN_MM = 30;       // fabai 门槛(mm):最长边短于此值不计数
-// fabai 的【置信度门槛】(2026-09-29 加的) —— 全项目唯一一道非尺寸门槛。
+// fabai 的【置信度门槛】(2026-09-29 加的) —— 本项目第一道非尺寸门槛
+// (2026-09-30 起 shupi 也有了同样的一道, 见上面 SHUPI_MIN_CONF; 两张表都是 minConfFor)。
 // 模型的 fabai 概率不高于这个值的, 那一块不算发白(也就进不了上面那个 FABAI_MAX_COUNT)。
 // 为什么单给它开一道: 现场 2026-09-29 提的要求是「发白只有概率大于 0.65 才算真的是发白」
 //   —— 也就是对发白这一个类再收紧一道, 别的类不动。做成 fabai 专属而不是去调全局
@@ -191,7 +203,7 @@ constexpr int   FABAI_MIN_LEN_MM = 30;       // fabai 门槛(mm):最长边短于
 //   置信度是模型自己给的分、跟标定无关。两道门槛是「且」的关系 —— 尺寸和概率都过了
 //   才算数(见 postprocessor.cpp 的 countsTowardRule)。两个数谁松谁紧没有固定关系,
 //   现场各自调: 把门槛调很高、数量上限留着 99, 效果就是「只有很确定的发白才拦板」。
-// 界面「发白概率大于」那个框认这个值, 口径是【大于】(等于不算), 跟界面文案一致。
+// 界面「发白概率(置信度)」那个框认这个值, 口径是【大于】(等于不算), 跟界面文案一致。
 constexpr float FABAI_MIN_CONF = 0.65f;
 // 「dongban+quebian 面积之和占比 > 0.4%」这条跨类组合规则 2026-09-23 删掉: 破洞/缺边都
 // 改走数量之后, 这条按面积算的没有对应的口径了(个数和面积没法相加)。常量

@@ -38,7 +38,7 @@ static cv::Scalar classColor(const std::string& name) {
 // 「这一块不算数」的统一画法：把类色整体压暗，而不是换成另一个颜色。
 // 为什么不换色：灰色已经被 shupi 占了，别的颜色又各有其主，换色会让工人以为框里
 // 是另一个类。压暗则一眼看出「还是这个类，只是不算数」。
-// 不算数的原因不只有「太小」：fabai 还有一道置信度门槛（见 countsTowardRule），
+// 不算数的原因不只有「太小」：fabai/shupi 还有一道置信度门槛（见 countsTowardRule），
 // 概率不够的也这样压暗。压暗不区分原因，工人要的是「算不算数」这一个答案。
 static cv::Scalar dimColor(const cv::Scalar& c) {
     const double k = 0.45;   // 压到 45%：暗到能区分，又不至于在深色板上看不见
@@ -68,7 +68,7 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
         // 也没机会参与判定，跟「小到不算数」(框照画、只是压暗)完全是两种处理。
         // 绝大多数类就是全局 CONF_THRESHOLD，只有 heiba 用自己那个更低的数
         // (config.h HEIBA_MIN_CONF, 为了把手工推理时看到的 0.28 那一档接住)。
-        // ⚠ 别跟 fabai 那道置信度门槛搞混：那道在这一步【之后】(见 countsTowardRule)，
+        // ⚠ 别跟 fabai/shupi 那道置信度门槛搞混：那道在这一步【之后】(见 countsTowardRule)，
         //   是「这次检测算不算数」；这道是「这算不算一次检测」。
         // ⚠ 引擎导出时 EfficientNMS 里还烤着一个 score_threshold，那是这道线【之前】的
         //   硬底 —— 那个数要是没低于 0.25，这里填多少都没用（框根本吐不出来）。
@@ -109,13 +109,15 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 //       门槛值各类各管各的(死节 30mm 是现场标准, 其余现场还没调过)。
 //       判定口径只有 countsTowardRule() 一处, draw() 用的也是它(只不过把框线压暗来画)——
 //       两处必须同一个口径, 否则会出现「画成不算数的颜色、却被数进去判了 NG」。
-//   fabai 发白还有一道【置信度门槛】(2026-09-29 加的, 界面行名「发白概率大于」):
-//       模型给的 fabai 概率不高于这个值的, 那一块不算发白。它跟尺寸门槛并列在
+//   fabai 发白 / shupi 树皮 另有一道【置信度门槛】(fabai 那道 2026-09-29 加的, shupi
+//       那道 2026-09-30 加的; 界面行名「发白概率(置信度)」/「树皮概率(置信度)」):
+//       模型给的概率不高于这个值的, 那一块不算这个类。它跟尺寸门槛并列在
 //       countsTowardRule() 里(两道是「且」), 所以判定/框色/统计三处照样只有一个口径 ——
 //       这是把它放进 countsTowardRule 而不是在 isNG 里另写一条 if 的理由。
 //       跟 dongban 那道第二门槛(走自己的 if)不同: 那条是同一个类的第二道【尺寸】门槛,
 //       一张表一类只能放一个数; 这条是【另一种】门槛, 表里放得下, 所以归表。
-//       为什么只给发白开这道 —— 见 config.h 的 FABAI_MIN_CONF。
+//       为什么最早给发白开这道、树皮又是怎么跟上来的 —— 见 config.h 的 FABAI_MIN_CONF
+//       和 SHUPI_MIN_CONF。
 //   dongban 破洞还有【第二道】同样形状、门槛更严的规则(现场叫「一票否决」, 界面行名/
 //       原因串里是「大破洞或大油疤」): 数的是「最长边超过 _dongban_big_min_len_mm 的
 //       破洞」有多少块。它不走 sizeGateMm/countsTowardRule(那是每类一处的门槛表),
@@ -158,11 +160,12 @@ int Postprocessor::sizeGateMm(const std::string& name) const {
 
 // 置信度门槛表: 哪个类要求「模型给的把握大于多少」才算数。没列进来的类 = 没这道门槛。
 // 跟上面那张尺寸门槛表是一对: sizeGateMm 管「多大才算」, 这个管「多确定才算」。
-// 现在只有 fabai 一格, 形状照抄上面那张表 —— 一是以后再加类不必另想写法, 二是让
-// countsTowardRule 里那句「怎么算过门槛只留这一处」继续成立(表里加一行就够了,
-// 不用去 isNG/draw/drawSummary 各补一个条件)。
+// 现在有 fabai(shupi 是 2026-09-30 加的同一道), 形状照抄上面那张表 —— 一是以后再加类
+// 不必另想写法, 二是让 countsTowardRule 里那句「怎么算过门槛只留这一处」继续成立
+// (表里加一行就够了, 不用去 isNG/draw/drawSummary 各补一个条件)。
 double Postprocessor::minConfFor(const std::string& name) const {
     if (name == "fabai") return _fabai_min_conf;
+    if (name == "shupi") return _shupi_min_conf;
     return 0.0;
 }
 
@@ -173,8 +176,8 @@ bool Postprocessor::hasGate(const std::string& name) const {
 }
 
 bool Postprocessor::countsTowardRule(const Defect& d) const {
-    // 置信度门槛(目前只有 fabai 有这道): 模型自己给的把握不够, 这块就不算数。
-    // 口径是【大于】——`<=` 判为不算, 跟界面上写的「发白概率大于 0.65」逐字对应,
+    // 置信度门槛(目前有 fabai/shupi 两道): 模型自己给的把握不够, 这块就不算数。
+    // 口径是【大于】——`<=` 判为不算, 跟界面上写的「发白概率(置信度) >0.65」逐字对应,
     // 也跟下面尺寸门槛的 `> gate` 一个方向(那边也是「大于才算」)。
     // 两道门槛是「且」: 这里先筛置信度, 过了再去看尺寸, 任何一道没过都返回 false。
     const double conf_gate = minConfFor(d.name);
@@ -190,7 +193,7 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
                          bool* size_only) const {
     int jieba_cnt   = 0;
     int dongba_cnt  = 0;      // 下面这几个都只数「门槛全过了」的那些，见 countsTowardRule
-                              // （dongba/dongban/quebian/shupi 是尺寸门槛，fabai 还要加一道置信度）
+                              // （dongba/dongban/quebian/shupi 是尺寸门槛，shupi/fabai 还要加一道置信度）
     int dongban_cnt = 0;
     int quebian_cnt = 0;
     int heiba_cnt   = 0;
@@ -230,6 +233,7 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     // 原因串拼法：带门槛的类必须把门槛写进去，否则工人看到「死节>2」会去数图上所有该类框
     // （包括不算数的小块），数出来比 2 多，以为程序数错了。置信度门槛同理：看到「发白>99」
     // 去数图上所有发白框，其中一部分是因为概率不够没算数，不写清楚又是一次「程序数错了」。
+    // （树皮 2026-09-30 也多了这道，理由完全一样。）
     // gate_mm / gate_conf 传 0 就是不写那一道门槛（jieba/heiba 两道都没有）。
     // 两道都有时合成一个括号（"发白>99(30mm以上,概率>0.65)"），不叠两层括号。
     auto countReason = [](const char* cn, int max_cnt, int gate_mm, double gate_conf = 0.0) {
@@ -267,7 +271,8 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     if (quebian_cnt > _quebian_max_count)
         reasons.push_back(countReason("缺边", _quebian_max_count, _quebian_min_len_mm));
     if (shupi_cnt > _shupi_max_count)
-        reasons.push_back(countReason("树皮", _shupi_max_count, _shupi_min_len_mm));
+        reasons.push_back(countReason("树皮", _shupi_max_count, _shupi_min_len_mm,
+                                      _shupi_min_conf));
     if (fabai_cnt > _fabai_max_count)
         reasons.push_back(countReason("发白", _fabai_max_count, _fabai_min_len_mm,
                                       _fabai_min_conf));
@@ -302,7 +307,7 @@ void Postprocessor::draw(cv::Mat& frame, const std::vector<Defect>& defects) {
         // 这里说的门槛是【全部】门槛（尺寸 + 置信度都算），判断走 countsTowardRule，
         // 跟 isNG 数个数时同一个口径，颜色和结论不会打架。
         // 压暗不区分是哪道门槛卡的：工人要的是「算不算数」这一个答案。想知道是被哪道卡的，
-        // 看框上那个标签 —— 概率就印在上面（fabai 0.58），跟界面「发白概率大于」一比就明白。
+        // 看框上那个标签 —— 概率就印在上面（fabai 0.58），跟界面「发白概率(置信度)」一比就明白。
         // ⚠ 标签底色【不】跟着压暗：现场要求标签保持一致（一眼看清是哪个类），
         //   所以算不算数只体现在框线上。
         const cv::Scalar cls   = classColor(d.name);
@@ -330,7 +335,7 @@ void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defec
     // 按类别统计两个数：
     //   cnt   —— 画出来的框数（没过门槛的那些也在内：工人是对着图数的，
     //            图上画了几个框，面板就该能对上几个）
-    //   gated —— 其中把门槛全过了的（尺寸 + 置信度，fabai 两道都有），
+    //   gated —— 其中把门槛全过了的（尺寸 + 置信度，fabai/shupi 两道都有），
     //            也就是 isNG 真正数进去的那些
     // 两个数都要报（有门槛的类显示成 gated/cnt）。只报 cnt 会出这种画面：面板写
     // 「dongba x4」、工人数着 4 > 2 觉得该判 NG、板子却是 OK（判定只数了其中 2 个
@@ -361,7 +366,7 @@ void Postprocessor::drawSummary(cv::Mat& frame, const std::vector<Defect>& defec
             // 有门槛的类：「算数/全部」。dongba 2/4 = 画了 4 个框，其中 2 个
             // 过了 30mm（判定就按 2 个数）。全过的时候写 4/4 而不省略 —— 形状固定，
             // 工人不用去猜这次是哪种写法。
-            // ⚠ 判据是 hasGate 不是 sizeGateMm：fabai 可能把尺寸门槛调成 0（不过滤）、
+            // ⚠ 判据是 hasGate 不是 sizeGateMm：fabai/shupi 可能把尺寸门槛调成 0（不过滤）、
             //   只留那道置信度门槛，那时它照样是「会筛掉一部分」的类，两个数不相等。
             line += std::to_string(gated[i]) + "/" + std::to_string(cnt[i]);
         else
