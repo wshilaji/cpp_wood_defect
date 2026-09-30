@@ -336,11 +336,25 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     root->addLayout(leftCol, 3);
 
     // ---- 右: 操作面板 ----
-    // 右列分两层：上面是滚动区（只装设置项），下面钉着按钮行。
-    // 原先只有一层(全塞在滚动区里)，设置项一多关机/重启就被顶到可视区外面 —— 分层
+    // 右列分三层：上面是【钉住的】状态区(标题/系统状态/判定结果/统计)，中间是只装
+    // 【工人设置】的滚动区，下面钉着按钮行。
+    // 原先只有两层(状态区也在滚动区里)：设置项一多关机/重启会被顶出可视区 —— 分层
     // 的理由见下面 btnRow 那段。结论：设置项多高都不该把关机/重启顶出屏幕。
+    // 2026-09-30 又把状态区单独拔出来(现场定的)：判定结果和统计是工人【一直要盯着】的，
+    // 原来它们跟设置项一起卷在滚动区里，往下翻设置时判定区就被卷走了 —— 最不该滚走的
+    // 就是它。反过来设置项是「调完就不动」的，让它自己滚无所谓。
     auto* rightCol = new QVBoxLayout;
     rightCol->setSpacing(10);
+
+    // 钉住的那一摞。宽 PANEL_W 而不是 SCROLL_W：要跟下面滚动区里那些分组框左右对齐
+    // （那边让出了滚动条的宽度，所以是 420 不是 440）。
+    // ⚠ 这块高度是【不可压缩】的，1080 屏上约占 400px，滚动区视口剩 ~600px。以后往这
+    //   四块里加东西先算这笔账 —— 撑大了就是从滚动区嘴里抢，抢光了设置项就没法看。
+    auto* topPanel = new QWidget(this);
+    topPanel->setFixedWidth(PANEL_W);
+    auto* vTop = new QVBoxLayout(topPanel);
+    vTop->setContentsMargins(0, 0, 0, 0);
+    vTop->setSpacing(8);
 
     auto* scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
@@ -355,18 +369,18 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* title = new QLabel(QString::fromUtf8("旭森智造"));
     title->setAlignment(Qt::AlignCenter);
     title->setStyleSheet("font-size:22px; font-weight:bold; color:#4da6ff; padding:4px;");
-    v->addWidget(title);
+    vTop->addWidget(title);
 
     // 系统状态（3 个灯横排，省空间）
-    auto* grpSt = new QGroupBox(QString::fromUtf8("系统状态"), panel);
+    auto* grpSt = new QGroupBox(QString::fromUtf8("系统状态"), topPanel);
     auto* lSt   = new QHBoxLayout(grpSt);
     _ledPlc    = addLedRow(QString::fromUtf8("PLC 连接"), lSt);
     _ledCam    = addLedRow(QString::fromUtf8("相机"), lSt);
     _ledEngine = addLedRow(QString::fromUtf8("AI 引擎"), lSt);
-    v->addWidget(grpSt);
+    vTop->addWidget(grpSt);
 
     // 判定结果
-    auto* grpRs = new QGroupBox(QString::fromUtf8("判定结果"), panel);
+    auto* grpRs = new QGroupBox(QString::fromUtf8("判定结果"), topPanel);
     auto* lRs   = new QVBoxLayout(grpRs);
     _resultBlock = new QLabel("--", grpRs);
     _resultBlock->setAlignment(Qt::AlignCenter);
@@ -379,7 +393,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
         QString::fromUtf8("font-size:16px; color:#ff8080; min-height:22px;"));
     lRs->addWidget(_resultBlock);
     lRs->addWidget(_reasonLabel);
-    v->addWidget(grpRs);
+    vTop->addWidget(grpRs);
 
     // 统计 —— 一整块 4×2，中间一条通到底的竖线，木板尺寸单独占最后一行：
     //   总检数       1234  │  合格率     99.0%
@@ -388,7 +402,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     //   内存          41%  │  硬盘         14%
     //   木板尺寸          1200.0 × 600.0 mm
     // 木板尺寸放最下面而不是中间：它跨满整行，夹在两列中间会把竖线顶成两截。
-    auto* grpStt = new QGroupBox(QString::fromUtf8("统计"), panel);
+    auto* grpStt = new QGroupBox(QString::fromUtf8("统计"), topPanel);
     auto* lStt   = new QVBoxLayout(grpStt);
     lStt->setSpacing(6);
 
@@ -407,7 +421,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
 
     // 值长（1200.0 × 600.0 mm），不配对，占整行
     _statDims = addStatRow(QString::fromUtf8("木板尺寸"), lStt);
-    v->addWidget(grpStt);
+    vTop->addWidget(grpStt);
 
     // 工人设置
     auto* grpSet = new QGroupBox(QString::fromUtf8("工人设置"), panel);
@@ -673,13 +687,16 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                           "background:#6b4a1f; border-radius:6px;"));
     btnRow->addWidget(shutdownBtn, 2);
     btnRow->addWidget(rebootBtn, 3);
-    // panel 里留一条弹簧：设置项比滚动区矮时把内容顶到上边，不居中飘着
+    // panel(工人设置)里留一条弹簧：设置项比滚动区矮时把内容顶到上边，不居中飘着
     v->addStretch(1);
 
-    // 右列组装：上=滚动区(吃掉全部余高)，下=按钮行(固定高度，永远可见)。
-    // 顺序就是上下顺序，addWidget 的第二个参数是伸缩比例：滚动区 1、按钮行 0。
+    // 右列组装：上=钉住的状态区(占自己的高度)，中=滚动区(吃掉全部余高)，下=按钮行。
+    // 顺序就是上下顺序，addWidget 的第二个参数是伸缩比例：0 / 1 / 0。
     // ⚠ 以后往 panel 里加东西不用再担心把关机键顶下去 —— 加多少都在滚动区里面。
+    // topPanel 写 AlignLeft 是因为它定宽(PANEL_W)而右列更宽(SCROLL_W)，不指定的话
+    // 由布局去摆那 20px 余量；钉死左对齐，它才跟滚动区里那些分组框在一条竖线上。
     scroll->setWidget(panel);
+    rightCol->addWidget(topPanel, 0, Qt::AlignLeft);
     rightCol->addWidget(scroll, 1);
     rightCol->addLayout(btnRow, 0);
     root->addLayout(rightCol, 0);
@@ -694,6 +711,24 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                             color:#4da6ff; font-weight:bold; }
         QSpinBox, QDoubleSpinBox { background:#1d2128; border:1px solid #3a414b;
                             border-radius:4px; padding:4px; min-width:70px; }
+        /* 上下按钮那块【底色】: 现场反馈「看不见哪里能点」—— 原来它跟输入框底同色
+           (#1d2128), 等于没有按钮。给它 #3a414b(输入框的描边色、QPushButton 的底色,
+           同一套), 悬停/按下再亮一档, 一眼能看出这是个能点的块、按下去也有反应。
+           ⚠ 只给了底色, 【没有】给 ::up-arrow 指定 image —— Qt 有可能因此就不画那个
+           三角了(QSS 的经典坑)。真不画了再说: 补三角得自己画(QProxyStyle, 一个小类),
+           不是在这儿再加两行能解决的。三角的颜色另有一处(QPalette::ButtonText,
+           见 main.cpp), 两件事互补: 一个管底色(这儿)、一个管三角(那儿)。 */
+        QSpinBox::up-button, QDoubleSpinBox::up-button,
+        QSpinBox::down-button, QDoubleSpinBox::down-button
+                          { background:#3a414b; }
+        QSpinBox::up-button, QDoubleSpinBox::up-button { border-top-right-radius:3px; }
+        QSpinBox::down-button, QDoubleSpinBox::down-button { border-bottom-right-radius:3px; }
+        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover
+                          { background:#4a5360; }
+        QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
+        QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed
+                          { background:#5d6878; }
         QPushButton       { background:#3a414b; border:none; border-radius:6px; padding:8px; }
         QPushButton:hover { background:#4a5360; }
     )"));

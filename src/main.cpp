@@ -30,6 +30,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QColor>
+#include <QPalette>   // 只给下面"点亮 SpinBox 上下三角"那几行用（app.palette()/setPalette）
 
 #include "config.h"
 #include "logger.h"
@@ -288,6 +289,20 @@ int main(int argc, char** argv) {
 
     // ---- Qt 界面 ----
     QApplication app(argc, argv);
+
+    // 输入框上下按钮那个小三角是黑的, 换掉它用的这个颜色。
+    // 注意它不是样式表里的 color —— 三角走的是 QPalette::ButtonText, 那份调色板来自
+    // 桌面主题; 样式表里的 color 落到的是 WindowText/Text, 传不到三角那儿。所以这个
+    // 颜色只能在这儿换, 写进样式表没用。
+    // 取 #e0e0e0 = 主题里的正文色: 落到近黑的输入框(#1d2128)上对比够看清, 万一
+    // ButtonText 还有别的去处也跟原来一样(连带影响为零)。滚动条两端的小箭头同源, 一起被点亮。
+    // ⚠ 必须在建控件之前设, 之后建的控件才拿得到这份调色板(MainWindow 就在下一行)。
+    {
+        QPalette pal = app.palette();
+        pal.setColor(QPalette::ButtonText, QColor(0xe0, 0xe0, 0xe0));
+        app.setPalette(pal);
+    }
+
     MainWindow win;
     // 默认全屏 kiosk 模式：无边框 + 置顶 + 全屏，连桌面侧边栏/任务栏一起盖住
     win.setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
