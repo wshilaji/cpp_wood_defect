@@ -711,24 +711,12 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                             color:#4da6ff; font-weight:bold; }
         QSpinBox, QDoubleSpinBox { background:#1d2128; border:1px solid #3a414b;
                             border-radius:4px; padding:4px; min-width:70px; }
-        /* 上下按钮那块【底色】: 现场反馈「看不见哪里能点」—— 原来它跟输入框底同色
-           (#1d2128), 等于没有按钮。给它 #3a414b(输入框的描边色、QPushButton 的底色,
-           同一套), 悬停/按下再亮一档, 一眼能看出这是个能点的块、按下去也有反应。
-           ⚠ 只给了底色, 【没有】给 ::up-arrow 指定 image —— Qt 有可能因此就不画那个
-           三角了(QSS 的经典坑)。真不画了再说: 补三角得自己画(QProxyStyle, 一个小类),
-           不是在这儿再加两行能解决的。三角的颜色另有一处(QPalette::ButtonText,
-           见 main.cpp), 两件事互补: 一个管底色(这儿)、一个管三角(那儿)。 */
-        QSpinBox::up-button, QDoubleSpinBox::up-button,
-        QSpinBox::down-button, QDoubleSpinBox::down-button
-                          { background:#3a414b; }
-        QSpinBox::up-button, QDoubleSpinBox::up-button { border-top-right-radius:3px; }
-        QSpinBox::down-button, QDoubleSpinBox::down-button { border-bottom-right-radius:3px; }
-        QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
-        QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover
-                          { background:#4a5360; }
-        QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed,
-        QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed
-                          { background:#5d6878; }
+        /* ⚠ 别在这儿给 ::up-button/::down-button 加 background(2026-09-30 试过, 回退了):
+           样式表一旦接管那两个子控件的底色, Qt 就【不再画内置的三角】了(除非另给
+           ::up-arrow 指定 image) —— 结果是没有箭头的两个灰块紧贴在一起(上下按钮本来
+           就挨着, 靠三角分方向), 现场反馈"成了灰的、上下连在一起, 还不如之前"。
+           要让上下按钮是个看得见的块, 只能自己画(QProxyStyle: 底色+分隔线+三角一起),
+           不是加几行样式表能办的。三角的颜色见 main.cpp 的 QPalette::ButtonText。 */
         QPushButton       { background:#3a414b; border:none; border-radius:6px; padding:8px; }
         QPushButton:hover { background:#4a5360; }
     )"));
