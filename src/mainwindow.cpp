@@ -431,7 +431,13 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 活节 = 节扣发白、按不掉, 不影响使用; 死节 = 节扣没掉但一按就掉
     // 括号里的拼音是模型/日志里那个类的名字(labels.txt、推理日志、图上画的都是它)，
     // 现场排查时不用再猜「活节对应哪个英文名」。
-    _jiebaSpin  = addSpinRow(QString::fromUtf8("活节(jieba)数量大于"), 0, 50, 10, lSet);
+    // 上限 500，跟下面几行对齐。原来这里是 50，下面死节那行也是 50 —— 那是最早那版界面
+    // 留下的数：第一版只有一个「结疤NG」框是 0~50，96fee96 把它拆成 活节/死节 两行时照抄了
+    // 下来，而同一个 commit 里新写的 heiba 直接给的是 500。此后新加的类一律 500，只有这两行
+    // 没人回头改齐。50 的坏处是静默的：现场想填 99（那个约定 = 实际不判这条规则，跟
+    // shupi/fabai 一样）时，QSpinBox 到顶就卡在 50，不报错也不提示；config.ini 里手写的
+    // jieba_max=99 同样会被 setValue 夹回 50（见下面读配置那几行）。
+    _jiebaSpin  = addSpinRow(QString::fromUtf8("活节(jieba)数量大于"), 0, 500, 10, lSet);
     // 死节/破洞/缺边/树皮/发白 五行是同一个形状：左边数量阈值、右边尺寸门槛。
     // 2026-09-23 现场定的 —— 除了死节本来就是数量规则，另外四个原本走【面积和占比】，
     // 当天全改成了这个形状（为什么改见 postprocessor.cpp 的函数头注释）。
@@ -440,7 +446,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // （宽度账见 addSpinRowTwoBoxes —— 面板加宽前这行只剩 ~30px 余量，加不下那 3 个字；
     //   现在 PANEL_W 给到 420 有余量了，但没必要加，符号比多一个标签清楚）。
     addSpinRowTwoBoxes(QString::fromUtf8("死节(dongba)数量大于"),
-                       0, 50, 2, QString::fromUtf8(" 个"),
+                       0, 500, 2, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
                        &_dongbaSpin, &_dongbaMinLenSpin, lSet);
     // 小油疤(黑色油滴到板上, 板子不碎) 数量阈值 —— 数量 > 此值判 NG，没有尺寸门槛
