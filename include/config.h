@@ -259,6 +259,12 @@ constexpr bool  SHOW_DISPLAY  = true;
 constexpr const char* OUTPUT_DIR = "./output/";
 constexpr const char* SAVE_ENABLE_PASSWORD = "629785";   // 界面开启「存图开关」所需密码
 
+// 今日统计（界面那个合格率）的落盘文件，相对 OUTPUT_DIR。内容是一行
+// "YYYY-MM-DD <总数> <NG数>" —— 纯文本，现场 cat 一下就能看，想手动清当天数据直接删文件。
+// 放在 output/ 根目录（不是 raw/ 或 result/）：cleanup_images.sh 只管那两个子目录里的
+// *.jpg，这个文件它碰不到，不会被清图连带删掉。细节见 main.cpp 的 loadDailyStats。
+constexpr const char* DAILY_STATS_FILE = "daily_stats.txt";
+
 // OK 板抽样比例(%)：开发者模式【没开】时按这个数抽 OK 板，0 = 不抽。
 // 不依赖开发者模式(密码)也能留下 OK 板 —— 查漏检要拿 OK 板当反例看。
 // 只管 OK 板：NG 板一直是无条件全存(原始图+结果图)，不看这个数。

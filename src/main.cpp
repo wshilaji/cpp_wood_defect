@@ -18,6 +18,7 @@
 #include <sstream>
 #include <string>
 #include <cctype>          // std::tolower：thermal zone 的 type 大小写各版 L4T 不统一
+#include <ctime>           // localtime_r / strftime：今日统计的日期串
 #include <sys/statvfs.h>
 
 #include <QApplication>
@@ -107,6 +108,85 @@ struct FPS {
         return avg > 0 ? 1000.0 / avg : 0;
     }
 };
+
+// ============================================================
+// 今日统计（界面那个「合格率」）的落盘
+// ============================================================
+// 为什么要有这一段：界面上的「总检数 / 不合格数 / 合格率」是拿下面主循环里的两个内存
+// 计数器算的，而现场时不时会「换程序」（systemctl stop → 换二进制 → start）—— 不落盘的话
+// 每换一次程序，当天的数就从 0 重新开始，看到的就不是今天真实的一天，而是「自从上次换
+// 程序以来」。用户 2026-10-01 反馈的就是这个。
+//
+// 口径（两条都是跟用户确认过的）：
+//   - 只算【PLC 触发的生产板】。手动拍照那块板是工程师调机 / 试缺陷板用的，掺进来会
+//     永久拉低这个数，所以计数处按 BoardSource 过滤（见主循环里那段）。
+//   - 只算【当天】。日期一变就归零，新的一天从 0 起。
+//
+// 落盘位置：output/ 根目录（不是 raw/ 或 result/）。cleanup_images.sh 只清那两个子目录里的
+// *.jpg，这个文件不在它管辖范围内，不会被清图连带删掉。systemd 那边 WorkingDirectory 就是
+// 程序目录，所以相对路径 ./output/ 是确定的。
+//
+// 格式：一行 "YYYY-MM-DD <总数> <NG数>"。纯文本，当场 cat 就能看；想手动清当天数据直接
+// 删文件即可（下次启动没有文件 = 从 0 起，这是正常路径，不报错）。
+static std::string g_statsDate;   // 当前 total/ng_total 计的是哪一天
+
+static std::string todayStr() {
+    std::time_t t = std::time(nullptr);
+    std::tm tm{};
+    localtime_r(&t, &tm);
+    char buf[16];
+    std::strftime(buf, sizeof buf, "%Y-%m-%d", &tm);
+    return buf;
+}
+
+static std::string dailyStatsPath() {
+    return std::string(Config::OUTPUT_DIR) + Config::DAILY_STATS_FILE;
+}
+
+/** 启动时把今日累计读回来。只有文件里的日期 == 今天才采纳；否则（新的一天 / 首次运行 /
+ *  文件被写坏）一律从 0 起 —— 读不到或读不懂都不是错误，正常往下跑。 */
+static void loadDailyStats(uint64_t& total, uint64_t& ng) {
+    total = 0;
+    ng    = 0;
+    g_statsDate = todayStr();
+
+    std::ifstream f(dailyStatsPath());
+    if (!f.is_open()) return;              // 还没有这个文件 = 第一次跑
+
+    std::string date;
+    uint64_t t = 0, n = 0;
+    if (!(f >> date >> t >> n)) return;    // 内容坏了也当从 0 起，不打断启动
+    if (date != g_statsDate) return;       // 是昨天的记录：不采纳（文件现在也不必动）
+
+    total = t;
+    ng    = n;
+}
+
+/** 覆盖写一行。只在计数真的变过、且过了限频时被调（见 maybeFlushDaily）。 */
+static void saveDailyStats(uint64_t total, uint64_t ng) {
+    std::ofstream f(dailyStatsPath(), std::ios::trunc);
+    if (!f.is_open()) return;              // 写不了就不写：统计丢了总比把主流程搞崩强
+    f << g_statsDate << " " << total << " " << ng << "\n";
+}
+
+/** 周期性刷盘：兜住「没走到收尾就没了」的情况（被 kill -9、断电）。
+ *  30 秒一次 —— 最坏丢 30 秒的量，相对一天可忽略；而热路径上这里只是一次时间戳比较，
+ *  不产生任何 I/O（写盘最多 30 秒一次）。计数没变过就直接返回，免得空闲时也反复写。 */
+static void maybeFlushDaily(uint64_t total, uint64_t ng) {
+    static std::chrono::steady_clock::time_point last_tp;
+    static uint64_t last_total = 0, last_ng = 0;
+    static bool     first      = true;
+
+    if (!first && total == last_total && ng == last_ng) return;   // 计数没变，不写
+    auto now = std::chrono::steady_clock::now();
+    if (!first && std::chrono::duration<double>(now - last_tp).count() < 30.0) return;
+
+    saveDailyStats(total, ng);
+    last_tp    = now;
+    last_total = total;
+    last_ng    = ng;
+    first      = false;
+}
 
 // ============================================================
 // 系统状态：GPU/CPU 温度、内存占用、硬盘占用（低优先级：只喂状态栏显示，不参与检测）
@@ -380,7 +460,9 @@ int main(int argc, char** argv) {
 
         // ---- 主循环（PLC / 手动拍照 触发） ----
         FPS fps;
+        // 今日累计（跨换程序保留，见上面 loadDailyStats）。界面那个合格率算的就是这俩。
         uint64_t total = 0, ng_total = 0;
+        loadDailyStats(total, ng_total);
         auto t0 = std::chrono::steady_clock::now();
 
         // 相机调参用: 记录上次已下发值（初始即界面默认值，避免启动重复下发）
@@ -525,8 +607,22 @@ int main(int argc, char** argv) {
             // 缺陷规则一条都没触发 —— 这种板不存图，见下面存图段
             bool ng_size_only = false;
             bool is_ng = post.isNG(defects, len_mm, wid_mm, ng_reason, &ng_size_only);
-            if (is_ng) ng_total++;
-            total++;
+            // 只把【PLC 生产板】计进合格率 —— 手动拍照是工程师调机/试缺陷板用的，计进来
+            // 会永久拉低这个数（2026-10-01 起按 src 过滤；在那之前是照单全收的）。
+            // PLC 报结果那边本来就只对 PLC 板写握手（plc.reportResult 内部自己判来源），
+            // 所以这里跟着它同一个口径。
+            if (src == BoardSource::Plc) {
+                // 跨零点自动归零：进程连着跑几天不重启时，新的一天从 0 起。
+                // 每板调一次 todayStr()（一次 localtime_r），相对 1.1s 的推理可忽略；
+                // 这里不碰任何文件 —— 写盘只在 maybeFlushDaily 里限频发生。
+                if (todayStr() != g_statsDate) {
+                    total = 0;
+                    ng_total = 0;
+                    g_statsDate = todayStr();
+                }
+                if (is_ng) ng_total++;
+                total++;
+            }
 
             // 报本板结果: PLC 板写 HR1+HR3(握手), 手动 debug 板自动忽略, PLC 状态保持干净
             plc.reportResult(!is_ng);
@@ -556,9 +652,16 @@ int main(int argc, char** argv) {
             // 统计
             fps.add(pt.elapsed());
 
-            if (total % 50 == 0)
+            // total > 0 那道是这次加过滤才需要的：手动拍照的板现在不进 total，没跑过 PLC
+            // 板之前 total 一直是 0，而 0 % 50 == 0 会让每张手动图都打一行「检测:0」。
+            if (total > 0 && total % 50 == 0)
                 LOGI << "FPS:" << std::fixed << std::setprecision(1) << fps.val()
                      << " | 检测:" << total << " | NG:" << ng_total;
+
+            // 定期把今日统计刷盘（30s 限频、计数没变不写）——兜住崩溃/断电那种走不到
+            // 收尾的退出；换程序走的是干净收尾，由下面收尾段负责。这里只是比较时间戳，
+            // 热路径依然零 I/O。
+            maybeFlushDaily(total, ng_total);
 
             // NG 原因写进结果图右上角 —— 存下来的 NG 图事后翻出来就能看到判据。
             // 位置是挑过的, 两边理由不同:
@@ -605,6 +708,9 @@ int main(int argc, char** argv) {
         plc.stop();
         cam.stop();
         saver.stop();   // 等后台把排队中的存图写完再退出
+        // 「换程序」走的就是这条路：systemctl stop/restart → SIGTERM → running=false →
+        // 循环退出到这里。把今日统计落盘，换完程序合格率接着往下走，不用从 0 重新开始。
+        saveDailyStats(total, ng_total);
         // 收尾这段时间还可能收到信号, cleanup_all() 会经 g_plc/g_cam 去停设备。
         // plc 随本 try 作用域析构, 之后信号再进来就是解引用已析构对象 → 必须清空指针。
         // (cam 在外层作用域不会析构, 但句柄已关, 一并清掉省得误判为"还在跑")
