@@ -94,26 +94,32 @@ static_assert(HEIBA_MIN_CONF <= CONF_THRESHOLD,
 //     这个类在新数据集里没有了(模型输出 14 类, 旧表是 15 个名字)。当时的表现:
 //       模型吐 0(破洞)  → 被叫成「死节」, 拿死节的门槛(2 个/30mm)去判它;
 //       模型吐 10(发白) → 落到旧表的「suibian」上, 而 suibian 不参与判定 ⇒ 发白永不生效。
-//   第二次(同一天晚些时候): 换成 models/train929_n960/ 那轮(960 输入) —— 新引擎把 heiba
-//     挪到了 0, shuwen/quebian、liefeng/shupi 各自对调, 就是现在下面这个顺序。
+//   第二次(同一天晚些时候): 换成 models/train929_n960/ 那轮(960 输入) —— 那个引擎把 heiba
+//     挪到了 0, shuwen/quebian、liefeng/shupi 各自对调。
 //     ⚠ 这一次【不能】拿第一次的经验去推: 只有前 8 位在动, 尾巴(piwenba 往后)原封不动。
 //     所以别"估着改", 一律照 confusion_matrix.png 逐行念。
+//   第三次(2026-10-01): 换成 models/train1001_n960/ 那轮 —— 这次前 8 位是【整段重排】,
+//     不是局部对调: dongban/dongba 各前移一位, heiba 从 0 掉到 2, jieba 从 3 甩到 7,
+//     shuwen/liefeng/shupi 跟着前移; quebian 停在 5 没动, 那是巧合、不是规律。
+//     尾巴(piwenba 往后)第三次原封不动。就是现在下面这个顺序。
+//   ⚠ 三轮下来前 8 位已经来回翻过好几遍 —— 别再拿"上一轮长什么样"去推, 每轮都照那一轮
+//     的 confusion_matrix.png 从头念一遍。
 //
-//   两次改的都只有这张表: 判定阈值、ini 键、界面行名全是【按名字】走的, 别处一处都不用动
+//   三次改的都只有这张表: 判定阈值、ini 键、界面行名全是【按名字】走的, 别处一处都不用动
 //   (全项目按下标取类的地方只有这一张表 + postprocessor 里 cls_id→名字那一次转换)。
 //
 // 换引擎时怎么核对这张表(上线前务必做一遍, 五分钟的事):
 //   训练目录里那张 confusion_matrix.png, 坐标轴顺序【就是】模型的 class_id 顺序
 //   (Ultralytics 拿模型自己的 names 画的); models/labels.txt 应当是同一份。
 //   把这两样对着下面这个表逐行念一遍, 有对不上的先别上线。
-//   这份顺序的出处是 models/train929_n960/(2026-09-29 第二轮训练) —— 照着那张矩阵和
+//   这份顺序的出处是 models/train1001_n960/(2026-10-01 第三轮训练) —— 照着那张矩阵和
 //   labels.txt 核对出来的, 不是猜的。
 //
 // ⚠ 换引擎和改这张表必须【同时】上: 只换引擎不改表 = 每个框叫错名字、还拿错门槛去判它;
 //   只改表不换引擎 = 一样错, 只是错的方向反过来。两个文件是绑在一起的一对。
 const std::vector<std::string> CLASSES = {
-    "heiba", "dongban", "dongba", "jieba", "shuwen",
-    "quebian", "liefeng", "shupi", "piwenba", "baowen",
+    "dongban", "dongba", "heiba", "shuwen", "liefeng",
+    "quebian", "shupi", "jieba", "piwenba", "baowen",
     "fabai", "heiban", "banwen", "banwenba"
 };
 
