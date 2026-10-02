@@ -266,7 +266,7 @@ print(torch.cuda.is_available())
 ### labelme 标注转 YOLO 格式
 
 ```bash
-labelme2yolo --json_dir all/ --val_size 0.15 --test_size 0.15
+labelme2yolo --json_dir 20261001yolo/ --val_size 0.09 --test_size 0.01 "dongban,dongba,heiba,shuwen,liefeng,quebian,shupi,jieba,piwenba,baowen,fabai,heiban,banwen,banwenba"
 ```
 ### autodl 模型训练
 ```
