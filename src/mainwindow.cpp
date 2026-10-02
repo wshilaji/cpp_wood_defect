@@ -134,6 +134,37 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
     return sp;
 }
 
+// 一道【置信度门槛】占一行：标签 + 一个 0.00 的小数框（带 ">" 前缀，显示成 >0.45）。
+//
+// ⚠ 一行一个，【别】再挤回一行：2026-10-02 先做成了三个框挤在一行（把标签尾巴的
+//   「(置信度)」去掉、间距 8px 收到 6px 才勉强塞下 ~381/402px），现场一眼就说
+//   「挤在一起了」，当天就改成了现在这样。这几行宁可多占高度，也别再并排。
+// 用 QDoubleSpinBox 而不是 QSpinBox：这个数就是图上标签印的那个数（比如 fabai 0.58），
+// 显成 0.65 工人能直接跟框上的数字比；显成「65 %」就得在心里换算一次。
+// 范围从 0.00 起：0 = 关掉这道门槛（跟尺寸门槛「0 = 不过滤」同一个约定）。
+// ⚠ 0.31 以下的数【等于没填】—— 全局 CONF_THRESHOLD(0.3) 在更前面就把 0.3 以下的检测
+//   整个丢掉了，图上根本不会出现 conf < 0.3 的框。留着 0~0.3 这段是为了「关掉」这个
+//   语义，不是为了让人在这一段里调。（这个下界跟着 CONF_THRESHOLD 走。）
+static QDoubleSpinBox* addMinConfRow(const QString& name, double def, QVBoxLayout* lay) {
+    auto* box = new QWidget;                 // 整行包成 QWidget，跟 addSpinRow 一个形状
+    auto* row = new QHBoxLayout(box);
+    row->setContentsMargins(0, 0, 0, 0);
+    auto* lbl = new QLabel(name);
+    lbl->setStyleSheet("color:#c8c8c8;");
+    auto* sp = new QDoubleSpinBox;
+    sp->setRange(0.00, 0.99);
+    // 0.01 = 显示精度(setDecimals(2))，按钮一下走一个显示位。三个框取一样的值：
+    // 它们说的是同一回事，手感差一点现场就会觉得是两套东西。
+    sp->setSingleStep(0.01);
+    sp->setDecimals(2);
+    sp->setPrefix(">");
+    sp->setValue(def);
+    row->addWidget(lbl, 1);
+    row->addWidget(sp);
+    lay->addWidget(box);
+    return sp;
+}
+
 // ---- 左下角「最近结果」缩略图条 ----
 // 每张缩略图的大小(px)和张数。
 //
@@ -490,73 +521,19 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 30, ">", " mm",
                        &_fabaiSpin, &_fabaiMinLenSpin, lSet);
     // 置信度门槛: 模型给的概率大于这个值, 这一块才真的算这个类 —— 才算进上面那行
-    // 「数量大于」的数。fabai 那道 2026-09-29 现场加的; shupi 那道 2026-09-30 加的
-    // (加它的时候现场要求「跟发白那个放同一行」); dongban 那道 2026-10-02 加的。
-    // 三道挤一行、字数反而变多, 宽度是这么腾出来的(面板内宽 ~402px, 见 PANEL_W):
-    //   ① 标签里的「大于」去掉, 改成输入框自己的 ">" 前缀(显示成 >0.65)—— 上面几行右边
-    //      那个尺寸门槛就是 ">30 mm" 的写法, 同一个约定;
-    //   ② 2026-10-02 加第三道时, 又把三个标签尾巴上的「(置信度)」去掉了 —— 三个框说的是
-    //      同一回事, 那个后缀重复三遍本来就多余, 去掉一层腾出 ~60px ×3;
-    //   ③ 间距从 8px 收到 6px(4 个缝, 再省 8px)。
-    //   账: 三个「X概率」4 字标签 ~49px 各 + 三个 0.00 的小数框 70px 各
-    //       + 4 个缝 6px ≈ 381px; 内宽 402px, 剩 ~21px。
-    //   ⚠ 这行余量已经比别的行小得多(addSpinRowTwoBoxes 那行还留着 ~93px) ——
-    //     再加第四个框之前先算账, 加不下就改成两行。
-    // ⚠ 顺序【破洞 → 树皮 → 发白】, 跟面板里上面那几行数量门槛的上下顺序一致, 不是随手排的。
-    // 为什么不并进上面各自那行: 那几行已经是「数量 + 尺寸门槛」两个框的形状, 再塞第三个
-    // 就只能不配标签, 工人看不出第三个框管什么。
-    // 用 QDoubleSpinBox 而不是 QSpinBox: 这个数就是图上标签印的那个数(比如 fabai 0.58),
-    // 显成 0.65 工人能直接跟框上的数字比; 显成「65 %」就得在心里换算一次。
-    // 范围从 0.00 起: 0 = 关掉这道门槛(跟尺寸门槛「0 = 不过滤」同一个约定)。
-    // ⚠ 0.31 以下的数【等于没填】—— 全局 CONF_THRESHOLD(0.3) 在更前面就把 0.3 以下的检测
-    //   整个丢掉了, 图上根本不会出现 conf < 0.3 的框。留着 0~0.3 这段是为了「关掉」这个
-    //   语义, 不是为了让人在这一段里调。
-    //   (这个下界跟着 CONF_THRESHOLD 走: 全局降过一次, 它也跟着降过一次。)
+    // 「数量大于」的数。fabai 那道 2026-09-29 现场加的; shupi 那道 2026-09-30 加的;
+    // dongban 那道 2026-10-02 加的。
+    // ⚠ 一行一个(2026-10-02 先做成三个挤一行, 现场一眼就说「挤在一起了」, 当天改掉) ——
+    //   形状和宽度账见上面 addMinConfRow。
+    // 顺序【破洞 → 树皮 → 发白】, 跟上面那几行数量门槛的上下顺序一致, 不是随手排的。
+    // (这三行放在发白那行后面、gateHint 前面: 三道概率是同一类东西, 挨着放;
+    //  上面那几行的形状被「数量 + 尺寸门槛」两个框占满了, 塞不下第三个。)
     // 三个数都是现场定的、各说各的: dongban 0.45、shupi 0.40、fabai 0.65 —— 不是一套换算
     // 关系, 也别拿一个去推另一个。数值的出处统一在 config.h 的 DONGBAN_MIN_CONF /
     // SHUPI_MIN_CONF / FABAI_MIN_CONF。
-    {
-        auto* box = new QWidget;
-        auto* row = new QHBoxLayout(box);
-        row->setContentsMargins(0, 0, 0, 0);
-        row->setSpacing(6);
-        auto* lblDongban = new QLabel(QString::fromUtf8("破洞概率"));
-        lblDongban->setStyleSheet("color:#c8c8c8;");
-        _dongbanMinConfSpin = new QDoubleSpinBox;
-        _dongbanMinConfSpin->setRange(0.00, 0.99);
-        // 步长/精度跟另外两个框取一样的值: 三个框说的是同一回事, 手感差一点现场就会觉得
-        // 是两套东西。0.01 = 显示精度(setDecimals(2)), 按钮一下走一个显示位。
-        _dongbanMinConfSpin->setSingleStep(0.01);
-        _dongbanMinConfSpin->setDecimals(2);
-        _dongbanMinConfSpin->setPrefix(">");
-        _dongbanMinConfSpin->setValue(0.45);
-        auto* lblShupi = new QLabel(QString::fromUtf8("树皮概率"));
-        lblShupi->setStyleSheet("color:#c8c8c8;");
-        _shupiMinConfSpin = new QDoubleSpinBox;
-        _shupiMinConfSpin->setRange(0.00, 0.99);
-        _shupiMinConfSpin->setSingleStep(0.01);
-        _shupiMinConfSpin->setDecimals(2);
-        _shupiMinConfSpin->setPrefix(">");
-        _shupiMinConfSpin->setValue(0.40);
-        auto* lblFabai = new QLabel(QString::fromUtf8("发白概率"));
-        lblFabai->setStyleSheet("color:#c8c8c8;");
-        _fabaiMinConfSpin = new QDoubleSpinBox;
-        _fabaiMinConfSpin->setRange(0.00, 0.99);
-        // 0.01: 跟显示精度(setDecimals(2))对齐 —— 显示 0.65, 按钮一下就走 0.01, 键盘敲
-        // 也是两位小数, 三者一致。原来是 0.05(一下走 5 个显示位, 现场嫌跨得大)。
-        // 0.65 照样落在整步上(第 65 步), 出厂值不受影响。
-        _fabaiMinConfSpin->setSingleStep(0.01);
-        _fabaiMinConfSpin->setDecimals(2);
-        _fabaiMinConfSpin->setPrefix(">");
-        _fabaiMinConfSpin->setValue(0.65);
-        row->addWidget(lblDongban, 1);
-        row->addWidget(_dongbanMinConfSpin);
-        row->addWidget(lblShupi, 1);
-        row->addWidget(_shupiMinConfSpin);
-        row->addWidget(lblFabai, 1);
-        row->addWidget(_fabaiMinConfSpin);
-        lSet->addWidget(box);
-    }
+    _dongbanMinConfSpin = addMinConfRow(QString::fromUtf8("破洞概率(置信度)"), 0.45, lSet);
+    _shupiMinConfSpin   = addMinConfRow(QString::fromUtf8("树皮概率(置信度)"), 0.40, lSet);
+    _fabaiMinConfSpin   = addMinConfRow(QString::fromUtf8("发白概率(置信度)"), 0.65, lSet);
     // 一条提示罩住上面这几行（五个类的数量/直径 + 破洞/树皮/发白那三道概率），不逐行重复 ——
     // 左边、右边的语义完全一样。
     // ⚠ 这行必须短，一行就好：面板在 QScrollArea 里，多占一行就多一行要滚。

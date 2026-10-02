@@ -19,8 +19,8 @@ class QPushButton;
  * 由检测主循环驱动刷新：
  *   setImage/setResult/setStats/setMeasure/setCycleMs
  *   setGpuTemp/setCpuTemp/setMemoryPct/setDiskPct（系统状态，空闲时刷新）
- * 工人设置（各类数量 / 各类尺寸门槛 / 发白那道置信度门槛 / 板长板宽 / 存图比例 / 曝光增益）
- * 用输入框，主循环轮询读取后下发。除了发白概率那一个是 QDoubleSpinBox，其余都是 QSpinBox。
+ * 工人设置（各类数量 / 各类尺寸门槛 / 破洞·树皮·发白三道置信度门槛 / 板长板宽 / 存图比例 /
+ * 曝光增益）用输入框，主循环轮询读取后下发。三道置信度门槛是 QDoubleSpinBox，其余都是 QSpinBox。
  * （2026-09-23 起【没有面积占比这类设置了】—— 四个类都改成了数量 + 尺寸门槛，见 config.h）
  * 手动拍照 通过按钮置位标志，主循环轮询消费（takeManualTrigger）。
  * 「最小化」不走主循环：点一下就把窗口藏起来、屏幕角上留一个小条（_restoreTab）点它
@@ -160,10 +160,10 @@ private:
     QSpinBox* _shupiMinLenSpin  = nullptr;
     QSpinBox* _fabaiSpin        = nullptr;
     QSpinBox* _fabaiMinLenSpin  = nullptr;
-    // 三个置信度门槛（0~1 的小数），并排占一行、紧跟在上面两行类别的下面。
+    // 三个置信度门槛（0~1 的小数），各占一行、跟在发白那行数量门槛的下面。
     // 留神这三个的属性：在全项目所有输入框里只有它们是 QDoubleSpinBox，也只有它们带 ">"
-    // 前缀（显示成 >0.65）—— 那一行是靠去掉标签里的「大于」「(置信度)」才把三个框挤下的，
-    // 宽度账在 mainwindow.cpp 建这一行的地方。
+    // 前缀（显示成 >0.65）—— 形状和宽度账在 mainwindow.cpp 的 addMinConfRow。
+    // ⚠ 别再并排: 2026-10-02 挤过一行, 现场说「挤在一起了」。
     QDoubleSpinBox* _dongbanMinConfSpin = nullptr;
     QDoubleSpinBox* _shupiMinConfSpin = nullptr;
     QDoubleSpinBox* _fabaiMinConfSpin = nullptr;

@@ -111,7 +111,7 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 //       两处必须同一个口径, 否则会出现「画成不算数的颜色、却被数进去判了 NG」。
 //   fabai 发白 / shupi 树皮 / dongban 破洞 另有一道【置信度门槛】(fabai 那道 2026-09-29
 //       加的, shupi 那道 2026-09-30 加的, dongban 那道 2026-10-02 加的; 界面行名
-//       「破洞概率」/「树皮概率」/「发白概率」):
+//       「破洞概率(置信度)」/「树皮概率(置信度)」/「发白概率(置信度)」):
 //       模型给的概率不高于这个值的, 那一块不算这个类。它跟尺寸门槛并列在
 //       countsTowardRule() 里(两道是「且」), 所以判定/框色/统计三处照样只有一个口径 ——
 //       这是把它放进 countsTowardRule 而不是在 isNG 里另写一条 if 的理由。
