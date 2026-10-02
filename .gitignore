@@ -26,3 +26,6 @@ tags
 CMakeFiles/
 cmake_install.cmake
 Makefile
+
+# Word 打开文档时的临时锁文件
+~$*
