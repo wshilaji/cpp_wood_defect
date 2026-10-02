@@ -160,10 +160,12 @@ private:
     QSpinBox* _shupiMinLenSpin  = nullptr;
     QSpinBox* _fabaiSpin        = nullptr;
     QSpinBox* _fabaiMinLenSpin  = nullptr;
-    // 三个置信度门槛（0~1 的小数），各占一行、跟在发白那行数量门槛的下面。
+    // 三个置信度门槛（0~1 的小数），排在发白那行数量门槛的下面：破洞独占一行，
+    // 树皮和发白并成一行（2026-10-02 现场要的「省点空间」）。
     // 留神这三个的属性：在全项目所有输入框里只有它们是 QDoubleSpinBox，也只有它们带 ">"
-    // 前缀（显示成 >0.65）—— 形状和宽度账在 mainwindow.cpp 的 addMinConfRow。
-    // ⚠ 别再并排: 2026-10-02 挤过一行, 现场说「挤在一起了」。
+    // 前缀（显示成 >0.65）—— 形状和宽度账在 mainwindow.cpp 的 addMinConfRow /
+    // addMinConfRowPair。
+    // ⚠ 别把三个并回一行: 2026-10-02 试过, 现场说「挤在一起了」。
     QDoubleSpinBox* _dongbanMinConfSpin = nullptr;
     QDoubleSpinBox* _shupiMinConfSpin = nullptr;
     QDoubleSpinBox* _fabaiMinConfSpin = nullptr;

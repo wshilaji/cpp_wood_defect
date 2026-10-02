@@ -134,35 +134,89 @@ static QSpinBox* addSpinRow(const QString& name, int lo, int hi, int def, QVBoxL
     return sp;
 }
 
-// 一道【置信度门槛】占一行：标签 + 一个 0.00 的小数框（带 ">" 前缀，显示成 >0.45）。
+// 【置信度门槛】那个小数框的本体（带 ">" 前缀，显示成 >0.45）。
 //
-// ⚠ 一行一个，【别】再挤回一行：2026-10-02 先做成了三个框挤在一行（把标签尾巴的
-//   「(置信度)」去掉、间距 8px 收到 6px 才勉强塞下 ~381/402px），现场一眼就说
-//   「挤在一起了」，当天就改成了现在这样。这几行宁可多占高度，也别再并排。
+// 三个框的全部设置【只在这里写一遍】—— 它们说的是同一回事，手感差一点（比如一个走
+// 0.01、另一个走 0.1）现场就会觉得是两套东西。并排那行也不能自己抄一份。
 // 用 QDoubleSpinBox 而不是 QSpinBox：这个数就是图上标签印的那个数（比如 fabai 0.58），
 // 显成 0.65 工人能直接跟框上的数字比；显成「65 %」就得在心里换算一次。
 // 范围从 0.00 起：0 = 关掉这道门槛（跟尺寸门槛「0 = 不过滤」同一个约定）。
 // ⚠ 0.31 以下的数【等于没填】—— 全局 CONF_THRESHOLD(0.3) 在更前面就把 0.3 以下的检测
 //   整个丢掉了，图上根本不会出现 conf < 0.3 的框。留着 0~0.3 这段是为了「关掉」这个
 //   语义，不是为了让人在这一段里调。（这个下界跟着 CONF_THRESHOLD 走。）
+static QDoubleSpinBox* makeMinConfSpin(double def) {
+    auto* sp = new QDoubleSpinBox;
+    sp->setRange(0.00, 0.99);
+    // 0.01 = 显示精度(setDecimals(2))，按钮一下走一个显示位。
+    sp->setSingleStep(0.01);
+    sp->setDecimals(2);
+    sp->setPrefix(">");
+    sp->setValue(def);
+    return sp;
+}
+
+// 一道【置信度门槛】独占一行：标签 + 一个小数框。
+//
+// ⚠ 这个形状（一行一道）是给破洞那道用的。树皮/发白两道并排走下面 addMinConfRowPair。
+// ⚠ 但【别】把三个都塞进一行：2026-10-02 早上试过，那一版得砍掉三道标签尾巴的
+//   「(置信度)」、间距从 8px 收到 6px，才勉强塞进 ~381/402px，现场一眼就说「挤在一起
+//   了」。现在这样（一道独占一行 + 两道并一行）是 2026-10-02 现场要的折中，别再往回并。
 static QDoubleSpinBox* addMinConfRow(const QString& name, double def, QVBoxLayout* lay) {
     auto* box = new QWidget;                 // 整行包成 QWidget，跟 addSpinRow 一个形状
     auto* row = new QHBoxLayout(box);
     row->setContentsMargins(0, 0, 0, 0);
     auto* lbl = new QLabel(name);
     lbl->setStyleSheet("color:#c8c8c8;");
-    auto* sp = new QDoubleSpinBox;
-    sp->setRange(0.00, 0.99);
-    // 0.01 = 显示精度(setDecimals(2))，按钮一下走一个显示位。三个框取一样的值：
-    // 它们说的是同一回事，手感差一点现场就会觉得是两套东西。
-    sp->setSingleStep(0.01);
-    sp->setDecimals(2);
-    sp->setPrefix(">");
-    sp->setValue(def);
+    auto* sp = makeMinConfSpin(def);
     row->addWidget(lbl, 1);
     row->addWidget(sp);
     lay->addWidget(box);
     return sp;
+}
+
+// 两道【置信度门槛】并到一行：标签1 框1 标签2 框2 —— 2026-10-02 现场要的「省点空间」。
+//
+// 哪两道并、哪道独占，是 2026-10-02 现场点的：破洞单独一行，树皮 + 发白并一行。
+// 这一行并两道就已经把宽度吃到 ~398/402 了（见下），再并第三道就必然得砍标签 —— 那正是
+// 早上被否掉的那版。所以这个 helper 就按「两道」写死，不做成可变参数。
+// 【宽度】账（分组框内宽 ~402px；标签各 ~115px = 6 个汉字/15px + 一对括号；框各 ~80px
+//   = QSS 的 min-width:70px + padding/border）：
+//     115 + 80 + 8 + 115 + 80 ≈ 398px，余 ~4px。
+//   ⚠ 这是【估算】，不是量出来的（mac 上没有 Qt，字宽量不了）—— 398 对 402 就卡在预算
+//   线上，那 4px 余量是纸面上的。到底有没有被切掉尾巴，只有在 Jetson 上看才算数。
+//   真被切了，第一个该动的是这三道标签的「(置信度)」后缀（要动就三道一起动，别只去这两
+//   道，那样三行就不是一个口径了），不是去动 PANEL_W。
+//   ⚠ 更别往这一行里塞第三个：见上面 addMinConfRow 那条。
+static void addMinConfRowPair(const QString& name1, double def1, QDoubleSpinBox** out1,
+                              const QString& name2, double def2, QDoubleSpinBox** out2,
+                              QVBoxLayout* lay) {
+    auto* box = new QWidget;
+    auto* row = new QHBoxLayout(box);
+    row->setContentsMargins(0, 0, 0, 0);
+    // 8px：跟上面那几行「数量 + 直径」两个框的行（addSpinRowTwoBoxes）取同一个值。
+    // 同一个面板里两种间距，现场会觉得是两种东西。
+    row->setSpacing(8);
+    auto* lbl1 = new QLabel(name1);
+    lbl1->setStyleSheet("color:#c8c8c8;");
+    auto* lbl2 = new QLabel(name2);
+    lbl2->setStyleSheet("color:#c8c8c8;");
+    // 两个标签设成「宽度可以压到 0」：这一行是全项目最宽的一行（见上面那笔宽度账），
+    // 万一在真机上比我算的还宽，Qt 的默认行为是保标签、把最右边那个框顶出面板 ——
+    // 顶出去正好是发白那个框的上下箭头（箭头在框右侧），那就点不着了。
+    // 设成 Ignored 之后，挤的时候先压标签（字尾巴被切一点，仍读得出「树皮概率…」），
+    // 框和箭头一个都不会被顶出去。宽度够的时候没有任何区别（标签本来就有 stretch 1，
+    // 吃掉余量、文字左对齐）—— 也就是说这是纯兜底，正常情况看不出来。
+    lbl1->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    lbl2->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    auto* sp1 = makeMinConfSpin(def1);
+    auto* sp2 = makeMinConfSpin(def2);
+    row->addWidget(lbl1, 1);
+    row->addWidget(sp1);
+    row->addWidget(lbl2, 1);
+    row->addWidget(sp2);
+    lay->addWidget(box);
+    if (out1) *out1 = sp1;
+    if (out2) *out2 = sp2;
 }
 
 // ---- 左下角「最近结果」缩略图条 ----
@@ -520,56 +574,40 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 99, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
                        &_fabaiSpin, &_fabaiMinLenSpin, lSet);
-    // 置信度门槛: 模型给的概率大于这个值, 这一块才真的算这个类 —— 才算进上面那行
-    // 「数量大于」的数。fabai 那道 2026-09-29 现场加的; shupi 那道 2026-09-30 加的;
-    // dongban 那道 2026-10-02 加的。
-    // ⚠ 一行一个(2026-10-02 先做成三个挤一行, 现场一眼就说「挤在一起了」, 当天改掉) ——
-    //   形状和宽度账见上面 addMinConfRow。
-    // 顺序【破洞 → 树皮 → 发白】, 跟上面那几行数量门槛的上下顺序一致, 不是随手排的。
-    // (这三行放在发白那行后面、gateHint 前面: 三道概率是同一类东西, 挨着放;
-    //  上面那几行的形状被「数量 + 尺寸门槛」两个框占满了, 塞不下第三个。)
-    // 三个数都是现场定的、各说各的: dongban 0.45、shupi 0.40、fabai 0.65 —— 不是一套换算
-    // 关系, 也别拿一个去推另一个。数值的出处统一在 config.h 的 DONGBAN_MIN_CONF /
-    // SHUPI_MIN_CONF / FABAI_MIN_CONF。
-    _dongbanMinConfSpin = addMinConfRow(QString::fromUtf8("破洞概率(置信度)"), 0.45, lSet);
-    _shupiMinConfSpin   = addMinConfRow(QString::fromUtf8("树皮概率(置信度)"), 0.40, lSet);
-    _fabaiMinConfSpin   = addMinConfRow(QString::fromUtf8("发白概率(置信度)"), 0.65, lSet);
-    // 一条提示罩住上面这几行（五个类的数量/直径 + 破洞/树皮/发白那三道概率），不逐行重复 ——
-    // 左边、右边的语义完全一样。
+    // 一条提示罩住上面那几行【数量/直径】（五个类），不逐行重复 —— 左边、右边的语义完全一样。
+    // ⚠ 必须放在发白那行【正下方】、三道概率【之前】: 它说的是「左边=数量、右边=直径」，
+    //   罩的是上面那几行；放到三道概率下面（2026-10-02 之前的排法）会让人以为它也在说概率。
     // ⚠ 这行必须短，一行就好：面板在 QScrollArea 里，多占一行就多一行要滚。
     //   （原先底下那排关机/重启也在滚动区里，那时多一行会把它们顶出屏幕；那排已经挪到
     //    滚动区外面、钉在底部了，见下面 btnRow 那段 —— 所以现在的高度压力没以前那么
     //    致命，但仍然别在面板里堆可有可无的行。）
-    // 所以面板上只留这两条；「最长边怎么算」「没过门槛照样画框、只是框线暗一档」
-    // 这些解释不再占面板高度。
+    // 「最长边怎么算」「没过门槛照样画框、只是框线暗一档」这些解释不再占面板高度。
     auto* gateHint = new QLabel(
         QString::fromUtf8("（左边=数量，右边=直径：小于该直径的过滤掉，不算数）"), grpSet);
     gateHint->setWordWrap(true);
     gateHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(gateHint);
+    // 置信度门槛: 模型给的概率大于这个值, 这一块才真的算这个类 —— 才算进上面那行
+    // 「数量大于」的数。fabai 那道 2026-09-29 现场加的; shupi 那道 2026-09-30 加的;
+    // dongban 那道 2026-10-02 加的。
+    // 排法(2026-10-02 现场定的): 【破洞独占一行, 树皮 + 发白并成一行】—— 要省一行的高度。
+    // (早上先做过三个挤一行的版本, 现场一眼就说「挤在一起了」, 当天改成一行一个; 后来又
+    //  说太占地方, 于是成了现在这样。形状/宽度账见上面 addMinConfRow / addMinConfRowPair。)
+    // 顺序【破洞 → 树皮 → 发白】, 跟上面那几行数量门槛的上下顺序一致, 不是随手排的
+    // (树皮在左、发白在右, 也是照这个序)。
+    // (这两行放在发白那行和它那条提示的后面: 三道概率是同一类东西, 挨着放; 上面那几行的
+    //  形状被「数量 + 尺寸门槛」两个框占满了, 塞不下第三个。放提示后面而不是紧贴数量行,
+    //  是为了让那条「左边=数量」的提示只罩数量行 —— 它管不着概率, 别夹在中间。)
+    // 三个数都是现场定的、各说各的: dongban 0.45、shupi 0.40、fabai 0.65 —— 不是一套换算
+    // 关系, 也别拿一个去推另一个。数值的出处统一在 config.h 的 DONGBAN_MIN_CONF /
+    // SHUPI_MIN_CONF / FABAI_MIN_CONF。
+    _dongbanMinConfSpin = addMinConfRow(QString::fromUtf8("破洞概率(置信度)"), 0.45, lSet);
+    addMinConfRowPair(QString::fromUtf8("树皮概率(置信度)"), 0.40, &_shupiMinConfSpin,
+                      QString::fromUtf8("发白概率(置信度)"), 0.65, &_fabaiMinConfSpin, lSet);
     // 板长/板宽最小尺寸（横排省空间）：测出长/宽低于此值判 NG
     // 默认 1200/600 = 整板尺寸本身，即「比整板小就判 NG」（不再是原先的整板一半）
     addSpinRowPair(QString::fromUtf8("板长小于"), 0, 2000, 1200, " mm", &_lenSpin,
                    QString::fromUtf8("板宽小于"), 0, 2000, 600, " mm", &_widSpin, lSet);
-    // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示。
-    // 两个初值都是 0 —— 也就是「解锁之后默认也不存 OK 板」，要抽样得工程师自己往里填。
-    // 注意：这两个值【没有】持久化（上面那批 load/save 的键里没它俩），所以每次启动都回到 0，
-    // 现场调过也不留（ini 里那个 raw_save_pct 是死键，跟这行没关系）——
-    // 要让它记住得另加 load/save + connect。
-    _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lSet, &_rawRow);
-    _resultSpin = addSpinRow(QString::fromUtf8("结果图保存 %"), 0, 100, 0, lSet, &_resultRow);
-    _rawRow->setVisible(false);
-    _resultRow->setVisible(false);
-    // 存图总开关：默认关，开启需密码（防止工人误开把硬盘写满）
-    _saveChk = new QCheckBox(QString::fromUtf8("开发者模式（存图开关）"), grpSet);
-    _saveChk->setStyleSheet(
-        QString::fromUtf8("QCheckBox{color:#e0e0e0;} QCheckBox::indicator{width:18px;height:18px;}"));
-    lSet->addWidget(_saveChk);
-    // 存图保护提示：磁盘不足 / 目录超 60G 停存后显示，文案带具体原因（setSaveBlocked 填）
-    _saveBlocked = new QLabel(QString::fromUtf8("⚠ 存图已暂停"), grpSet);
-    _saveBlocked->setStyleSheet(QString::fromUtf8("color:#ff8080; font-size:14px;"));
-    _saveBlocked->setVisible(false);
-    lSet->addWidget(_saveBlocked);
     v->addWidget(grpSet);
 
     // 相机调参（工程师）
@@ -588,6 +626,35 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     gainHint->setStyleSheet("color:#909090; font-size:12px;");
     lCam->addWidget(gainHint);
     v->addWidget(grpCam);
+
+    // 开发者模式（存图）—— 2026-10-02 从【工人设置】里挪出来, 单独放最下面。
+    // 为什么挪: 它跟工人日常调的那一堆判定门槛不是一类东西 —— 那些改一个就改判 NG,
+    // 这个只是「存不存图」; 混在同一格里工人顺手就会点开, 而它一开要密码、开了还往硬盘写。
+    // ⚠ 两个「保存 %」行跟着一起挪: 它们本来就只在这个开关打开后才显示, 留在【工人设置】里
+    //   会变成「开关在下面、被它放出来的那两行却在上面中间」的断头路。
+    // 位置: 最后一条分组(相机调参)之后、v->addStretch(1) 之前 —— 也就是面板内容的最下面。
+    auto* grpDev = new QGroupBox(QString::fromUtf8("开发者模式"), panel);
+    auto* lDev   = new QVBoxLayout(grpDev);
+    // 存图总开关：默认关，开启需密码（防止工人误开把硬盘写满）
+    _saveChk = new QCheckBox(QString::fromUtf8("开发者模式（存图开关）"), grpDev);
+    _saveChk->setStyleSheet(
+        QString::fromUtf8("QCheckBox{color:#e0e0e0;} QCheckBox::indicator{width:18px;height:18px;}"));
+    lDev->addWidget(_saveChk);
+    // 存图保护提示：磁盘不足 / 目录超 60G 停存后显示，文案带具体原因（setSaveBlocked 填）
+    _saveBlocked = new QLabel(QString::fromUtf8("⚠ 存图已暂停"), grpDev);
+    _saveBlocked->setStyleSheet(QString::fromUtf8("color:#ff8080; font-size:14px;"));
+    _saveBlocked->setVisible(false);
+    lDev->addWidget(_saveBlocked);
+    // 原始图/结果图保存 %：默认隐藏，开发者模式开关开启（密码正确）后才显示。
+    // 两个初值都是 0 —— 也就是「解锁之后默认也不存 OK 板」，要抽样得工程师自己往里填。
+    // 注意：这两个值【没有】持久化（上面那批 load/save 的键里没它俩），所以每次启动都回到 0，
+    // 现场调过也不留（ini 里那个 raw_save_pct 是死键，跟这行没关系）——
+    // 要让它记住得另加 load/save + connect。
+    _rawSpin    = addSpinRow(QString::fromUtf8("原始图保存 %"), 0, 100, 0, lDev, &_rawRow);
+    _resultSpin = addSpinRow(QString::fromUtf8("结果图保存 %"), 0, 100, 0, lDev, &_resultRow);
+    _rawRow->setVisible(false);
+    _resultRow->setVisible(false);
+    v->addWidget(grpDev);
 
     // ---- 设置持久化: 存到当前目录 config.ini（可见文件，重启后保留） ----
     // 下面这些 value(key, 默认值) 里的默认值就是「出厂值」：没有 config.ini 时用它，
@@ -719,7 +786,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                           "background:#6b4a1f; border-radius:6px;"));
     btnRow->addWidget(shutdownBtn, 2);
     btnRow->addWidget(rebootBtn, 3);
-    // panel(工人设置)里留一条弹簧：设置项比滚动区矮时把内容顶到上边，不居中飘着
+    // panel 里留一条弹簧：设置项比滚动区矮时把内容顶到上边，不居中飘着。
+    // ⚠ 它也是「最下面」的界碑 —— 2026-10-02 把开发者模式挪到面板末尾, 位置就是
+    //   在这里往上、相机调参那格里往下。以后再挪分组, 也是塞到这条弹簧前面。
     v->addStretch(1);
 
     // 右列组装：上=钉住的状态区(占自己的高度)，中=滚动区(吃掉全部余高)，下=按钮行。
