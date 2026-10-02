@@ -571,6 +571,7 @@ int main(int argc, char** argv) {
             post.setDongbanMinLenMm(win.dongbanMinLenMm());
             post.setDongbanBigMaxCount(win.dongbanBigMaxCount());
             post.setDongbanBigMinLenMm(win.dongbanBigMinLenMm());
+            post.setDongbanMinConf(win.dongbanMinConf());
             post.setQuebianMaxCount(win.quebianMaxCount());
             post.setQuebianMinLenMm(win.quebianMinLenMm());
             post.setShupiMaxCount(win.shupiMaxCount());

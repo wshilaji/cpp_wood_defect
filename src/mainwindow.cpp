@@ -490,20 +490,21 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 30, ">", " mm",
                        &_fabaiSpin, &_fabaiMinLenSpin, lSet);
     // 置信度门槛: 模型给的概率大于这个值, 这一块才真的算这个类 —— 才算进上面那行
-    // 「数量大于」的数。fabai 那道 2026-09-29 现场加的; shupi 那道 2026-09-30 加的,
-    // 加它的时候现场要求「跟发白那个放同一行」。
-    // 两道挤一行、字数反而变多, 宽度是这么腾出来的(面板内宽 ~402px, 见 PANEL_W):
+    // 「数量大于」的数。fabai 那道 2026-09-29 现场加的; shupi 那道 2026-09-30 加的
+    // (加它的时候现场要求「跟发白那个放同一行」); dongban 那道 2026-10-02 加的。
+    // 三道挤一行、字数反而变多, 宽度是这么腾出来的(面板内宽 ~402px, 见 PANEL_W):
     //   ① 标签里的「大于」去掉, 改成输入框自己的 ">" 前缀(显示成 >0.65)—— 上面几行右边
-    //      那个尺寸门槛就是 ">30 mm" 的写法, 同一个约定, 一行省下 ~22px ×2;
-    //   ② 其余的按老规矩算: 两个标签 "树皮概率(置信度)" "发白概率(置信度)" 各 ~110px,
-    //      两个 0.00 的小数框各 70px(样式表 min-width), 三道间距 24px —— 合计 ~344px,
-    //      还剩 ~58px。别再加字: 这行已经不是「随便塞」的余量了(对比 addSpinRowTwoBoxes
-    //      那行留了 ~93px)。
-    // ⚠ 左边是【树皮】、右边是【发白】—— 跟上面两行数量门槛的上下顺序一致, 不是随手排的。
-    // 为什么不并进上面各自那行: 那两行已经是「数量 + 尺寸门槛」两个框的形状, 再塞第三个
+    //      那个尺寸门槛就是 ">30 mm" 的写法, 同一个约定;
+    //   ② 2026-10-02 加第三道时, 又把三个标签尾巴上的「(置信度)」去掉了 —— 三个框说的是
+    //      同一回事, 那个后缀重复三遍本来就多余, 去掉一层腾出 ~60px ×3;
+    //   ③ 间距从 8px 收到 6px(4 个缝, 再省 8px)。
+    //   账: 三个「X概率」4 字标签 ~49px 各 + 三个 0.00 的小数框 70px 各
+    //       + 4 个缝 6px ≈ 381px; 内宽 402px, 剩 ~21px。
+    //   ⚠ 这行余量已经比别的行小得多(addSpinRowTwoBoxes 那行还留着 ~93px) ——
+    //     再加第四个框之前先算账, 加不下就改成两行。
+    // ⚠ 顺序【破洞 → 树皮 → 发白】, 跟面板里上面那几行数量门槛的上下顺序一致, 不是随手排的。
+    // 为什么不并进上面各自那行: 那几行已经是「数量 + 尺寸门槛」两个框的形状, 再塞第三个
     // 就只能不配标签, 工人看不出第三个框管什么。
-    // 紧挨着上面那两行放的理由跟「大破洞或大油疤」贴着「破洞」放一样: 说的都是同一个类,
-    // 中间隔开工人就得来回找。
     // 用 QDoubleSpinBox 而不是 QSpinBox: 这个数就是图上标签印的那个数(比如 fabai 0.58),
     // 显成 0.65 工人能直接跟框上的数字比; 显成「65 %」就得在心里换算一次。
     // 范围从 0.00 起: 0 = 关掉这道门槛(跟尺寸门槛「0 = 不过滤」同一个约定)。
@@ -511,24 +512,33 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     //   整个丢掉了, 图上根本不会出现 conf < 0.3 的框。留着 0~0.3 这段是为了「关掉」这个
     //   语义, 不是为了让人在这一段里调。
     //   (这个下界跟着 CONF_THRESHOLD 走: 全局降过一次, 它也跟着降过一次。)
-    // 两个数都是现场定的、各说各的: fabai 0.65、shupi 0.40 —— 不是一套换算关系, 也别
-    // 拿一个去推另一个。数值的出处统一在 config.h 的 FABAI_MIN_CONF / SHUPI_MIN_CONF。
+    // 三个数都是现场定的、各说各的: dongban 0.45、shupi 0.40、fabai 0.65 —— 不是一套换算
+    // 关系, 也别拿一个去推另一个。数值的出处统一在 config.h 的 DONGBAN_MIN_CONF /
+    // SHUPI_MIN_CONF / FABAI_MIN_CONF。
     {
         auto* box = new QWidget;
         auto* row = new QHBoxLayout(box);
         row->setContentsMargins(0, 0, 0, 0);
-        row->setSpacing(8);
-        auto* lblShupi = new QLabel(QString::fromUtf8("树皮概率(置信度)"));
+        row->setSpacing(6);
+        auto* lblDongban = new QLabel(QString::fromUtf8("破洞概率"));
+        lblDongban->setStyleSheet("color:#c8c8c8;");
+        _dongbanMinConfSpin = new QDoubleSpinBox;
+        _dongbanMinConfSpin->setRange(0.00, 0.99);
+        // 步长/精度跟另外两个框取一样的值: 三个框说的是同一回事, 手感差一点现场就会觉得
+        // 是两套东西。0.01 = 显示精度(setDecimals(2)), 按钮一下走一个显示位。
+        _dongbanMinConfSpin->setSingleStep(0.01);
+        _dongbanMinConfSpin->setDecimals(2);
+        _dongbanMinConfSpin->setPrefix(">");
+        _dongbanMinConfSpin->setValue(0.45);
+        auto* lblShupi = new QLabel(QString::fromUtf8("树皮概率"));
         lblShupi->setStyleSheet("color:#c8c8c8;");
         _shupiMinConfSpin = new QDoubleSpinBox;
         _shupiMinConfSpin->setRange(0.00, 0.99);
-        // 步长/精度跟发白那个框取一样的值: 两个框说的是同一回事, 手感差一点现场就会觉得
-        // 是两套东西。0.01 = 显示精度(setDecimals(2)), 按钮一下走一个显示位。
         _shupiMinConfSpin->setSingleStep(0.01);
         _shupiMinConfSpin->setDecimals(2);
         _shupiMinConfSpin->setPrefix(">");
         _shupiMinConfSpin->setValue(0.40);
-        auto* lblFabai = new QLabel(QString::fromUtf8("发白概率(置信度)"));
+        auto* lblFabai = new QLabel(QString::fromUtf8("发白概率"));
         lblFabai->setStyleSheet("color:#c8c8c8;");
         _fabaiMinConfSpin = new QDoubleSpinBox;
         _fabaiMinConfSpin->setRange(0.00, 0.99);
@@ -539,13 +549,15 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
         _fabaiMinConfSpin->setDecimals(2);
         _fabaiMinConfSpin->setPrefix(">");
         _fabaiMinConfSpin->setValue(0.65);
+        row->addWidget(lblDongban, 1);
+        row->addWidget(_dongbanMinConfSpin);
         row->addWidget(lblShupi, 1);
         row->addWidget(_shupiMinConfSpin);
         row->addWidget(lblFabai, 1);
         row->addWidget(_fabaiMinConfSpin);
         lSet->addWidget(box);
     }
-    // 一条提示罩住上面这几行（五个类的数量/直径 + 树皮/发白那两道概率），不逐行重复 ——
+    // 一条提示罩住上面这几行（五个类的数量/直径 + 破洞/树皮/发白那三道概率），不逐行重复 ——
     // 左边、右边的语义完全一样。
     // ⚠ 这行必须短，一行就好：面板在 QScrollArea 里，多占一行就多一行要滚。
     //   （原先底下那排关机/重启也在滚动区里，那时多一行会把它们顶出屏幕；那排已经挪到
@@ -613,6 +625,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _dongbanMinLenSpin->setValue(s.value("dongban_min_len_mm", 30).toInt());
     _dongbanBigSpin->setValue(s.value("dongban_big_max_count", 1).toInt());
     _dongbanBigMinLenSpin->setValue(s.value("dongban_big_min_len_mm", 40).toInt());
+    // 出厂 0.45(现场定的数, 见 config.h 的 DONGBAN_MIN_CONF)。
+    // ⚠ 跟下面树皮/发白那两行一样必须 toDouble: 写成 toInt 会读成 0 且不报错 ——
+    //   正好落回「关掉这道门槛」, 现场调过的数会【静默失效】, 而且不报错、还看着正常。
+    _dongbanMinConfSpin->setValue(s.value("dongban_min_conf", 0.45).toDouble());
     _quebianSpin->setValue(s.value("quebian_max_count", 2).toInt());
     _quebianMinLenSpin->setValue(s.value("quebian_min_len_mm", 30).toInt());
     _shupiSpin->setValue(s.value("shupi_max_count", 99).toInt());
@@ -645,6 +661,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_big_max_count", v); });
     connect(_dongbanBigMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_big_min_len_mm", v); });
+    connect(_dongbanMinConfSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_min_conf", v); });
     connect(_quebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("quebian_max_count", v); });
     connect(_quebianMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -659,7 +677,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_max_count", v); });
     connect(_fabaiMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("fabai_min_len_mm", v); });
-    // 全项目仅有的两个 double 持久化键(树皮那道在上面, 跟它自己的数量/尺寸键挨着)。
+    // 全项目仅有的三个 double 持久化键(破洞/树皮那两道在上面, 各自跟自己的数量/尺寸键挨着)。
     // 存的是 0.65 这样的实数, 读的时候要 toDouble
     // (写成 toInt 会得到 0, 表现成「重启后这道门槛自己关了」, 而且不报错)。
     connect(_fabaiMinConfSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
@@ -997,6 +1015,7 @@ int MainWindow::dongbanMaxCount() const        { return _dongbanSpin->value(); }
 int MainWindow::dongbanMinLenMm() const        { return _dongbanMinLenSpin->value(); }
 int MainWindow::dongbanBigMaxCount() const     { return _dongbanBigSpin->value(); }
 int MainWindow::dongbanBigMinLenMm() const     { return _dongbanBigMinLenSpin->value(); }
+double MainWindow::dongbanMinConf() const      { return _dongbanMinConfSpin->value(); }
 int MainWindow::quebianMaxCount() const        { return _quebianSpin->value(); }
 int MainWindow::quebianMinLenMm() const        { return _quebianMinLenSpin->value(); }
 int MainWindow::shupiMaxCount() const          { return _shupiSpin->value(); }

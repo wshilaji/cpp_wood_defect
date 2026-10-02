@@ -73,7 +73,8 @@ static_assert(HEIBA_MIN_CONF <= CONF_THRESHOLD,
 //   jieba   活节   —— 木节发白、按不掉, 不影响使用
 //   dongba  死节   —— 节扣没掉, 但使劲一按就掉
 //   heiba   小油疤 —— 黑色油滴在板面, 板子不碎; 单个没事, 数量多了才扔
-//   dongban 破洞   —— 节扣掉了板子被穿透, 底下黑传送带透出来; **大油疤也标成这一类**
+//   dongban 破洞   —— 节扣掉了板子被穿透, 底下黑传送带透出来; **大油疤也标成这一类**;
+//                      2026-10-02 起另有一道置信度门槛(见下面 DONGBAN_MIN_CONF)
 //   quebian 缺边
 //   shupi   树皮   —— 板面带树皮; 2026-09-23 起按数量 + 尺寸门槛判(原为面积和占比),
 //                      2026-09-30 起另有一道置信度门槛(见下面 SHUPI_MIN_CONF)
@@ -178,6 +179,19 @@ constexpr int   DONGBAN_MIN_LEN_MM = 30;     // dongban 门槛(mm):最长边短�
 // 大油疤这个类, 它是并进 dongban 一起标的(见上面类名对照), 所以这条实际管两样东西。
 constexpr int   DONGBAN_BIG_MAX_COUNT  = 1;   // 大破洞或大油疤(一票否决):算数的块数 > 此值判 NG
 constexpr int   DONGBAN_BIG_MIN_LEN_MM = 40;  // 大破洞或大油疤(一票否决)门槛(mm):最长边短于此值不计数
+// dongban 破洞的【置信度门槛】(2026-10-02 加的) —— 形状跟下面 SHUPI_MIN_CONF/FABAI_MIN_CONF
+// 那两道一模一样(同一张表 postprocessor 的 minConfFor、同一处口径 countsTowardRule),
+// 只是换了个类: 模型的 dongban 概率不高于这个值的, 那一块不算破洞。
+// ⚠ 它管的是破洞【两条】数量规则 —— 上面那条(DONGBAN_MAX_COUNT)和「一票否决」
+//   (DONGBAN_BIG_MAX_COUNT)用的是同一个计数口径, 概率不过门槛的洞两条都不数。
+//   (大油疤在 labelme 里也标成 dongban, 所以一并被这道门槛管着, 见上面那条注释。)
+// 0.45 是现场 2026-10-02 定的数 —— 它跟发白那个 0.65、树皮那个 0.40 不是一套换算关系,
+// 别拿一个去推另一个, 也别在这条注释里替他们编一个理由。
+// ⚠ 0 = 关掉这道门槛, 跟尺寸门槛的「0 = 不过滤」是同一个约定。
+// ⚠ 有作用的区间是 0.31~0.99: 全局 CONF_THRESHOLD(0.3) 在更前面就把 0.3 以下的检测整个
+//   丢掉了, 图上根本不会出现 conf < 0.3 的框, 填 0.3 及以下等于没填。界面上是「破洞概率」
+//   那个框(跟树皮/发白那两个挤在同一行, 顺序就是面板里类的上下顺序), 口径也是【大于】。
+constexpr float DONGBAN_MIN_CONF = 0.45f;
 // quebian 缺边原为「面积和占比 > 0.5%」。0.5% ≈ 158x158px ≈ 一条 87mm 的缺边,
 // 出厂值先跟破洞对齐(2/30), 同样不是等价换算, 上线前要过板。
 constexpr int   QUEBIAN_MAX_COUNT  = 2;      // quebian 缺边:算数的块数 > 此值判 NG

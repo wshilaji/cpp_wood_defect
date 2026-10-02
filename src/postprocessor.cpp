@@ -109,15 +109,18 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 //       门槛值各类各管各的(死节 30mm 是现场标准, 其余现场还没调过)。
 //       判定口径只有 countsTowardRule() 一处, draw() 用的也是它(只不过把框线压暗来画)——
 //       两处必须同一个口径, 否则会出现「画成不算数的颜色、却被数进去判了 NG」。
-//   fabai 发白 / shupi 树皮 另有一道【置信度门槛】(fabai 那道 2026-09-29 加的, shupi
-//       那道 2026-09-30 加的; 界面行名「发白概率(置信度)」/「树皮概率(置信度)」):
+//   fabai 发白 / shupi 树皮 / dongban 破洞 另有一道【置信度门槛】(fabai 那道 2026-09-29
+//       加的, shupi 那道 2026-09-30 加的, dongban 那道 2026-10-02 加的; 界面行名
+//       「破洞概率」/「树皮概率」/「发白概率」):
 //       模型给的概率不高于这个值的, 那一块不算这个类。它跟尺寸门槛并列在
 //       countsTowardRule() 里(两道是「且」), 所以判定/框色/统计三处照样只有一个口径 ——
 //       这是把它放进 countsTowardRule 而不是在 isNG 里另写一条 if 的理由。
 //       跟 dongban 那道第二门槛(走自己的 if)不同: 那条是同一个类的第二道【尺寸】门槛,
 //       一张表一类只能放一个数; 这条是【另一种】门槛, 表里放得下, 所以归表。
-//       为什么最早给发白开这道、树皮又是怎么跟上来的 —— 见 config.h 的 FABAI_MIN_CONF
-//       和 SHUPI_MIN_CONF。
+//       (dongban 两样都有 —— 第二道尺寸门槛走自己的 if、置信度门槛归这张表 ——
+//        一个是尺寸一个是概率, 不冲突, 也不违反「一张表一类一个数」。)
+//       为什么最早给发白开这道、树皮和破洞又是怎么跟上来的 —— 见 config.h 的
+//       FABAI_MIN_CONF / SHUPI_MIN_CONF / DONGBAN_MIN_CONF。
 //   dongban 破洞还有【第二道】同样形状、门槛更严的规则(现场叫「一票否决」, 界面行名/
 //       原因串里是「大破洞或大油疤」): 数的是「最长边超过 _dongban_big_min_len_mm 的
 //       破洞」有多少块。它不走 sizeGateMm/countsTowardRule(那是每类一处的门槛表),
@@ -160,12 +163,15 @@ int Postprocessor::sizeGateMm(const std::string& name) const {
 
 // 置信度门槛表: 哪个类要求「模型给的把握大于多少」才算数。没列进来的类 = 没这道门槛。
 // 跟上面那张尺寸门槛表是一对: sizeGateMm 管「多大才算」, 这个管「多确定才算」。
-// 现在有 fabai(shupi 是 2026-09-30 加的同一道), 形状照抄上面那张表 —— 一是以后再加类
-// 不必另想写法, 二是让 countsTowardRule 里那句「怎么算过门槛只留这一处」继续成立
-// (表里加一行就够了, 不用去 isNG/draw/drawSummary 各补一个条件)。
+// 现在有三道: fabai(这道是最早的) / shupi(2026-09-30 加的同一道) / dongban(2026-10-02
+// 加的同一道), 形状照抄上面那张表 —— 一是以后再加类不必另想写法, 二是让 countsTowardRule
+// 里那句「怎么算过门槛只留这一处」继续成立(表里加一行就够了, 不用去 isNG/draw/drawSummary
+// 各补一个条件)。
+// 顺序照 CLASSES 来(dongban 在最前, 跟 config.h 里那几个常量的排列一致), 不是随手排的。
 double Postprocessor::minConfFor(const std::string& name) const {
-    if (name == "fabai") return _fabai_min_conf;
-    if (name == "shupi") return _shupi_min_conf;
+    if (name == "dongban") return _dongban_min_conf;
+    if (name == "fabai")   return _fabai_min_conf;
+    if (name == "shupi")   return _shupi_min_conf;
     return 0.0;
 }
 

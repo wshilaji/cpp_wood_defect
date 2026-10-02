@@ -21,8 +21,8 @@ public:
                                 cv::Mat& frame, const cv::Size& size);
 
     /** 整体 NG 判定。全部按【数量】判：jieba/heiba 不管大小全算，dongba/dongban/
-     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（fabai/shupi 还多一道置信度
-     *  门槛，见 fabaiMinConf/shupiMinConf）；dongban 另有第二道更严的数量规则
+     *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（dongban/fabai/shupi 还多一道
+     *  置信度门槛，见 dongbanMinConf/fabaiMinConf/shupiMinConf）；dongban 另有第二道更严的数量规则
      *  （大破洞或大油疤，门槛/上限见
      *  dongbanBigMinLenMm / dongbanBigMaxCount）；板长/板宽按测得尺寸；其余类默认 OK。
      *  reason 输出 NG 原因。
@@ -72,6 +72,13 @@ public:
     int  dongbanBigMaxCount() const   { return _dongban_big_max_count; }
     void setDongbanBigMinLenMm(int mm) { _dongban_big_min_len_mm = mm; }
     int  dongbanBigMinLenMm() const    { return _dongban_big_min_len_mm; }
+    /** dongban 破洞的【置信度门槛】(2026-10-02 加的)：形状跟下面 shupi/fabai 那两道
+     *  完全一样（同一张表 minConfFor、同一处口径 countsTowardRule），只是换了个类。
+     *  ⚠ 它管的是破洞那【两条】数量规则（dongbanMaxCount 和 dongbanBigMaxCount）——
+     *    同一个计数口径，概率不过门槛的洞两条都不数。
+     *  0 = 关掉这道门槛。出厂那个数（现场定的）见 config.h 的 DONGBAN_MIN_CONF。 */
+    void setDongbanMinConf(double c) { _dongban_min_conf = c; }
+    double dongbanMinConf() const    { return _dongban_min_conf; }
 
     void setHeibaMaxCount(int n) { _heiba_max_count = n; }
     int  heibaMaxCount() const   { return _heiba_max_count; }
@@ -147,6 +154,7 @@ private:
     int   _dongban_min_len_mm     = Config::DONGBAN_MIN_LEN_MM;
     int   _dongban_big_max_count  = Config::DONGBAN_BIG_MAX_COUNT;
     int   _dongban_big_min_len_mm = Config::DONGBAN_BIG_MIN_LEN_MM;
+    double _dongban_min_conf      = Config::DONGBAN_MIN_CONF;
     int   _heiba_max_count        = Config::HEIBA_MAX_COUNT;
     int   _shupi_max_count        = Config::SHUPI_MAX_COUNT;
     int   _shupi_min_len_mm       = Config::SHUPI_MIN_LEN_MM;

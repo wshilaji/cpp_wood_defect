@@ -64,8 +64,9 @@ public:
     // ---- 工人设置（主循环轮询读取） ----
     // 判定用的 7 个类全是数量规则：*MaxCount 是数量上限，*MinLenMm 是尺寸门槛
     // （最长边短于此值的不计数，0 = 不过滤）。jieba/heiba 没有门槛这一半。
-    // fabai 和 shupi 除了尺寸门槛还各多一道置信度门槛（fabaiMinConf / shupiMinConf）——
-    // 这是全项目仅有的两道不看框大小、只看模型把握的门槛，跟尺寸门槛是「且」的关系。
+    // dongban / shupi / fabai 除了尺寸门槛还各多一道置信度门槛（dongbanMinConf /
+    // shupiMinConf / fabaiMinConf）—— 这是全项目仅有的三道不看框大小、只看模型把握的
+    // 门槛，跟尺寸门槛是「且」的关系。
     int jiebaMaxCount() const;
     int dongbaMaxCount() const;
     int dongbaMinLenMm() const;
@@ -76,6 +77,12 @@ public:
     // 块数超过 dongbanBigMaxCount 判 NG。
     int dongbanBigMaxCount() const;
     int dongbanBigMinLenMm() const;
+    /** dongban 的置信度门槛：模型的 dongban 概率大于此值才算数（0 = 关掉这道门槛）。
+     *  ⚠ 它管的是破洞那【两条】数量规则（dongbanMaxCount 和 dongbanBigMaxCount）。
+     *  ⚠ 有作用的区间同 fabaiMinConf：0.31~0.99（全局 CONF_THRESHOLD 在更前面就筛掉了
+     *    0.3 以下，填 0.3 及以下等于没填）。出厂 0.45（现场定的数，见 config.h 的
+     *    DONGBAN_MIN_CONF）。 */
+    double dongbanMinConf() const;
     int heibaMaxCount() const;
     int quebianMaxCount() const;
     int quebianMinLenMm() const;
@@ -153,10 +160,11 @@ private:
     QSpinBox* _shupiMinLenSpin  = nullptr;
     QSpinBox* _fabaiSpin        = nullptr;
     QSpinBox* _fabaiMinLenSpin  = nullptr;
-    // 两个置信度门槛（0~1 的小数），并排占一行、紧跟在上面两行类别的下面。
-    // 留神这俩的属性：在全项目所有输入框里只有它们是 QDoubleSpinBox，也只有它们带 ">"
-    // 前缀（显示成 >0.65）—— 那一行是靠去掉标签里的「大于」才把两个框挤下的，宽度账
-    // 在 mainwindow.cpp 建这一行的地方。
+    // 三个置信度门槛（0~1 的小数），并排占一行、紧跟在上面两行类别的下面。
+    // 留神这三个的属性：在全项目所有输入框里只有它们是 QDoubleSpinBox，也只有它们带 ">"
+    // 前缀（显示成 >0.65）—— 那一行是靠去掉标签里的「大于」「(置信度)」才把三个框挤下的，
+    // 宽度账在 mainwindow.cpp 建这一行的地方。
+    QDoubleSpinBox* _dongbanMinConfSpin = nullptr;
     QDoubleSpinBox* _shupiMinConfSpin = nullptr;
     QDoubleSpinBox* _fabaiMinConfSpin = nullptr;
     QSpinBox* _lenSpin          = nullptr;
