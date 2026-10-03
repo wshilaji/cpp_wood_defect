@@ -90,11 +90,13 @@ public:
     double dongbanMinConf() const;
     int heibaMaxCount() const;
     // heiba 的第二道更严的门槛（界面行名/原因串都叫「大油疤」，2026-10-03 加的）。
-    // 形状跟上面 dongbanBig* 那一对一样，只是换了个类：门槛 heibaBigMinLenMm 以上的
+    // 形状跟上面 dongbanBig* 那一对一样，只是换了个类：门槛 heibaBigMinDiagMm 以上的
     // heiba 算数（画框时框线也换成黄色，同一个门槛），块数超过 heibaBigMaxCount 判 NG。
+    // ⚠ 量的是【对角线】，不是最长边 —— 全项目唯一一处，理由见 config.h 的
+    //    HEIBA_BIG_MIN_DIAG_MM。所以这个门槛的数值跟别的类（含「大破洞」）不可直接比。
     // ⚠ 两条各数各的：够大的 heiba 既算进 heibaMaxCount 的 24，也算进这条。
     int heibaBigMaxCount() const;
-    int heibaBigMinLenMm() const;
+    int heibaBigMinDiagMm() const;
     int quebianMaxCount() const;
     int quebianMinLenMm() const;
     int shupiMaxCount() const;
@@ -168,8 +170,10 @@ private:
     // 大油疤：heiba 的第二道门槛（2026-10-03 加的），紧挨着上面那一对排。
     // 两个类各一对，形状完全一样 —— 别把这两对看成一回事：上面那对数 dongban、
     // 这对数 heiba，行名和 NG 原因串也分得开（「大破洞」/「大油疤」）。
-    QSpinBox* _heibaBigSpin      = nullptr;
-    QSpinBox* _heibaBigMinLenSpin= nullptr;
+    // ⚠ 这对右边的框是【对角线】(mm)，跟别的行量的不是一回事 —— 见 mainwindow.cpp
+    //   那行的提示文案和 config.h 的 HEIBA_BIG_MIN_DIAG_MM。
+    QSpinBox* _heibaBigSpin        = nullptr;
+    QSpinBox* _heibaBigMinDiagSpin = nullptr;
     QSpinBox* _quebianSpin      = nullptr;
     QSpinBox* _quebianMinLenSpin= nullptr;
     QSpinBox* _shupiSpin        = nullptr;

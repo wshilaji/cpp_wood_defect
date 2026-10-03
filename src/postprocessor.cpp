@@ -9,10 +9,24 @@
 // 详见 countsTowardRule。
 // 用最长边而不是对角线：现场说法是「大于 3 公分」，对角线会把这个数放大 √2 倍左右（方框），
 // 细长框更是放大到接近长边本身 —— 门槛跟着框形变，没法跟工人解释。
+// ⚠ 2026-10-03 起有【一处例外】：大油疤(heiba 的第二道规则)改用量对角线，见下面的
+//   boxDiagonalMm。它跟这里说的理由不冲突 —— 那次是现场拿油疤的形状(长条/方形都有)
+//   单独定的，只改了那一条门槛，别的类照旧走这个函数。
 // ⚠ MM_PER_PX 是标定换算（config.h），相机装高装低、镜头焦距不是标称值它就偏 ——
 //   所以这些「绝对毫米」门槛天生带标定误差，跟以前的面积占比那种纯像素比值不是一回事。
 static float boxLongSideMm(const cv::Rect& box) {
     return (float)std::max(box.width, box.height) * Config::MM_PER_PX;
+}
+
+// 检测框的对角线(mm) = √(宽² + 高²) × 标定值。
+// ⚠ 全项目只有【大油疤】一条规则用它(见 isBigHeiba), 别顺手拿它替掉别的类的
+//   boxLongSideMm —— 两者量出来的数不一样(方形框差 ×√2), 换了就是把那道门槛悄悄改了。
+// 为什么大油疤要用这个: 见 config.h 的 HEIBA_BIG_MIN_DIAG_MM 那段(长条/方形都有,
+// 最长边会跟着缺陷朝向变)。
+static float boxDiagonalMm(const cv::Rect& box) {
+    const float w = (float)box.width  * Config::MM_PER_PX;
+    const float h = (float)box.height * Config::MM_PER_PX;
+    return std::sqrt(w * w + h * h);
 }
 
 // 每个类的框颜色 (BGR)。draw() 画框 和 drawSummary() 面板文字 共用，保持颜色一致
@@ -41,7 +55,7 @@ static cv::Scalar classColor(const std::string& name) {
 // 判定分了、图上不分的话，工人看到一块 120mm 的油疤画着跟小油疤一样的红框，
 // 是没法知道它归哪条规则管的。
 // 挑黄是因为 classColor 那张表里没被任何类占用（唯一那处黄是左边统计面板的标题行，
-// 那是面板自己的字色，不是某个类的框色）。门槛跟判定共用 _heiba_big_min_len_mm 一个数
+// 那是面板自己的字色，不是某个类的框色）。门槛跟判定共用 _heiba_big_min_diag_mm 一个数
 // （见 postprocessor.h 的 isBigHeiba），不会出现「判定算它、图上是别的颜色」。
 static const cv::Scalar HEIBA_BIG_COLOR = cv::Scalar(0, 255, 255);   // 黄
 
@@ -213,10 +227,12 @@ bool Postprocessor::countsTowardRule(const Defect& d) const {
 // ⚠ 它【不】是 countsTowardRule 的一部分：大油疤不是「不算数」，是「算到另一条规则里去」
 //   （小油疤那条数全部 heiba，大油疤这条数够大的那些，两条各数各的）。所以这里返回 true
 //   的框不会因此被压暗，只是框线换成黄色。
+// ⚠ 量的是【对角线】(boxDiagonalMm)，全项目唯一一处 —— 别的尺寸门槛都是最长边，
+//   为什么这里例外见 config.h 的 HEIBA_BIG_MIN_DIAG_MM。
 bool Postprocessor::isBigHeiba(const Defect& d) const {
     if (d.name != "heiba") return false;
-    if (_heiba_big_min_len_mm <= 0) return false;   // 门槛 0 = 这条规则关掉
-    return boxLongSideMm(d.box) > (float)_heiba_big_min_len_mm;
+    if (_heiba_big_min_diag_mm <= 0) return false;   // 门槛 0 = 这条规则关掉
+    return boxDiagonalMm(d.box) > (float)_heiba_big_min_diag_mm;
 }
 
 bool Postprocessor::isNG(const std::vector<Defect>& defects,
@@ -231,7 +247,7 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     int shupi_cnt   = 0;
     int fabai_cnt   = 0;
     int dongban_big_cnt = 0;  // 大破洞：_dongban_big_min_len_mm 以上的破洞块数
-    int heiba_big_cnt   = 0;  // 大油疤：_heiba_big_min_len_mm 以上的 heiba 块数
+    int heiba_big_cnt   = 0;  // 大油疤：对角线超过 _heiba_big_min_diag_mm 的 heiba 块数
 
     for (const auto& d : defects) {
         // 没门槛的类直接数；有门槛的类先问 countsTowardRule。门槛只管计数，
@@ -273,10 +289,13 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     // （树皮 2026-09-30 也多了这道，理由完全一样。）
     // gate_mm / gate_conf 传 0 就是不写那一道门槛（jieba/heiba 两道都没有）。
     // 两道都有时合成一个括号（"发白>99(30mm以上,概率>0.65)"），不叠两层括号。
-    auto countReason = [](const char* cn, int max_cnt, int gate_mm, double gate_conf = 0.0) {
+    // gate_label 是门槛那一段的前缀，只有大油疤用（"对角线"）—— 它那道门槛量的不是最长边，
+    // 原因串里不写明的话，工人看到「大油疤>1(100mm以上)」会拿最长边去量图上的框，怎么都对不上。
+    auto countReason = [](const char* cn, int max_cnt, int gate_mm,
+                          double gate_conf = 0.0, const char* gate_label = "") {
         std::string s = std::string(cn) + ">" + std::to_string(max_cnt);
         std::string gate;
-        if (gate_mm > 0) gate = std::to_string(gate_mm) + "mm以上";
+        if (gate_mm > 0) gate = std::string(gate_label) + std::to_string(gate_mm) + "mm以上";
         if (gate_conf > 0.0) {
             std::ostringstream cs;
             cs << "概率>" << std::fixed << std::setprecision(2) << gate_conf;
@@ -311,7 +330,7 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     // 两行, 而且都是「一块太大就否决」这层意思。
     if (heiba_big_cnt > _heiba_big_max_count)
         reasons.push_back(countReason("大油疤", _heiba_big_max_count,
-                                      _heiba_big_min_len_mm));
+                                      _heiba_big_min_diag_mm, 0.0, "对角线"));
     if (quebian_cnt > _quebian_max_count)
         reasons.push_back(countReason("缺边", _quebian_max_count, _quebian_min_len_mm));
     if (shupi_cnt > _shupi_max_count)

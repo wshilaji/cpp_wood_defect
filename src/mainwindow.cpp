@@ -558,10 +558,13 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 要紧 —— 大油疤和小油疤在模型里是同一个类名, 只有大小分得开, 所以「大油疤」四个字
     // 指的不是图上的一个类, 而是「小油疤里够大的」。不带 (heiba) 容易跟上面的小油疤那行
     // 对不上号。大小门槛 100mm 只是出厂值, 界面上随时改。
+    // ⚠ 这个门槛量的是【对角线】, 不是别的行那种最长边 —— 全项目唯一一处。数为什么不一样
+    //   见 config.h 的 HEIBA_BIG_MIN_DIAG_MM, 那句话没往输入框后缀里塞(这行本来就长,
+    //   2026-10-02 现场刚抱怨过挤), 而是写在下面那句 holeHint 和 NG 原因串里。
     addSpinRowTwoBoxes(QString::fromUtf8("大油疤(heiba)数量大于"),
                        0, 500, 1, QString::fromUtf8(" 个"),
                        0, 500, 100, ">", " mm",
-                       &_heibaBigSpin, &_heibaBigMinLenSpin, lSet);
+                       &_heibaBigSpin, &_heibaBigMinDiagSpin, lSet);
     // 标注备注 —— 紧跟在「破洞」「大油疤」这几行下面: 说的是这两条规则各收哪些缺陷,
     // 放远了就对不上号。
     // 「一票否决」是现场给这条规则起的名字 —— 这句要留在面板上: 一个 40mm 的大洞比两个
@@ -569,7 +572,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // ⚠ 原话里有「大油疤归到破洞里面」—— 2026-10-03 起【不成立了】(大油疤改标在 heiba),
     //   留着会让人以为大油疤还归破洞那条管, 所以整句重写。
     auto* holeHint = new QLabel(
-        QString::fromUtf8("（大破洞/大油疤=够大的一个就否决；大油疤数的是小油疤里够大的那些）"),
+        QString::fromUtf8("（大破洞/大油疤=够大的一个就否决；大油疤数的是小油疤里够大的那些，"
+                          "量的是对角线——跟别的行量的不是一回事）"),
         grpSet);
     holeHint->setWordWrap(true);
     holeHint->setStyleSheet("color:#909090; font-size:12px;");
@@ -686,7 +690,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // ⚠ 没有 ini 时这两个默认值就是「大油疤」这条规则上线时的取值 —— 现场没填过的话
     //   它就是 1 个 100mm 以上判 NG, 别以为这条规则默认是关的(门槛填 0 才是关)。
     _heibaBigSpin->setValue(s.value("heiba_big_max_count", 1).toInt());
-    _heibaBigMinLenSpin->setValue(s.value("heiba_big_min_len_mm", 100).toInt());
+    _heibaBigMinDiagSpin->setValue(s.value("heiba_big_min_diag_mm", 100).toInt());
     // 出厂 0.45(现场定的数, 见 config.h 的 DONGBAN_MIN_CONF)。
     // ⚠ 跟下面树皮/发白那两行一样必须 toDouble: 写成 toInt 会读成 0 且不报错 ——
     //   正好落回「关掉这道门槛」, 现场调过的数会【静默失效】, 而且不报错、还看着正常。
@@ -725,8 +729,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_big_min_len_mm", v); });
     connect(_heibaBigSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_big_max_count", v); });
-    connect(_heibaBigMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_big_min_len_mm", v); });
+    connect(_heibaBigMinDiagSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_big_min_diag_mm", v); });
     connect(_dongbanMinConfSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_min_conf", v); });
     connect(_quebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -1084,7 +1088,7 @@ int MainWindow::dongbanMinLenMm() const        { return _dongbanMinLenSpin->valu
 int MainWindow::dongbanBigMaxCount() const     { return _dongbanBigSpin->value(); }
 int MainWindow::dongbanBigMinLenMm() const     { return _dongbanBigMinLenSpin->value(); }
 int MainWindow::heibaBigMaxCount() const       { return _heibaBigSpin->value(); }
-int MainWindow::heibaBigMinLenMm() const       { return _heibaBigMinLenSpin->value(); }
+int MainWindow::heibaBigMinDiagMm() const      { return _heibaBigMinDiagSpin->value(); }
 double MainWindow::dongbanMinConf() const      { return _dongbanMinConfSpin->value(); }
 int MainWindow::quebianMaxCount() const        { return _quebianSpin->value(); }
 int MainWindow::quebianMinLenMm() const        { return _quebianMinLenSpin->value(); }

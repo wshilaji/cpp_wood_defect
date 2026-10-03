@@ -24,7 +24,7 @@ public:
      *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（dongban/fabai/shupi 还多一道
      *  置信度门槛，见 dongbanMinConf/fabaiMinConf/shupiMinConf）；dongban 和 heiba 各有
      *  第二道更严的数量规则（大破洞 / 大油疤，门槛/上限见
-     *  dongbanBigMinLenMm / dongbanBigMaxCount 和 heibaBigMinLenMm / heibaBigMaxCount）；
+     *  dongbanBigMinLenMm / dongbanBigMaxCount 和 heibaBigMinDiagMm / heibaBigMaxCount）；
      *  板长/板宽按测得尺寸；其余类默认 OK。
      *  reason 输出 NG 原因。
      *  ⚠ 2026-09-23 起本项目【没有面积规则了】—— dongban/quebian/shupi/fabai 原本都按
@@ -86,18 +86,20 @@ public:
     void setHeibaMaxCount(int n) { _heiba_max_count = n; }
     int  heibaMaxCount() const   { return _heiba_max_count; }
     /** heiba 的第二道数量规则，现场叫【大油疤】(2026-10-03 加的)：
-     *  最长边超过此值(mm)的 heiba 才算数，块数超过 heibaBigMaxCount 判 NG。跟上面那条
+     *  【对角线】超过此值(mm)的 heiba 才算数，块数超过 heibaBigMaxCount 判 NG。跟上面那条
      *  (heibaMaxCount) 是同一个类的两道门槛，形状跟 dongbanBig* 一模一样：那条管
      *  「小的多」（全部 heiba，够不够大都算），这条管「单块太大」。
-     *  ⚠ 两条各数各的：一个 100mm 的大油疤【既】算进 heibaMaxCount 的 24【也】算进这条。
+     *  ⚠ 量的是对角线，不是最长边 —— 全项目唯一一处，理由见 config.h 的
+     *    HEIBA_BIG_MIN_DIAG_MM（长条/方形都有，最长边会跟着缺陷朝向变）。
+     *  ⚠ 两条各数各的：一块过门槛的大油疤【既】算进 heibaMaxCount 的 24【也】算进这条。
      *    这是 2026-10-03 定的（跟 dongban 那一对一致），不是漏了去重。
      *  ⚠ 门槛和上限填 0 的约定跟别处一样：上限 0 = 超过 0 个 = 至少 1 个就判；
      *    门槛 0 = 这条规则整个关掉（那时 isBigHeiba 对谁都是 false，大油疤照旧只算进
      *    小油疤那条 —— 不会出现「两条都不数」的空洞）。 */
     void setHeibaBigMaxCount(int n) { _heiba_big_max_count = n; }
     int  heibaBigMaxCount() const   { return _heiba_big_max_count; }
-    void setHeibaBigMinLenMm(int mm) { _heiba_big_min_len_mm = mm; }
-    int  heibaBigMinLenMm() const    { return _heiba_big_min_len_mm; }
+    void setHeibaBigMinDiagMm(int mm) { _heiba_big_min_diag_mm = mm; }
+    int  heibaBigMinDiagMm() const    { return _heiba_big_min_diag_mm; }
 
     void setShupiMaxCount(int n) { _shupi_max_count = n; }
     int  shupiMaxCount() const   { return _shupi_max_count; }
@@ -159,7 +161,8 @@ private:
      *  判定和显示必须同一个口径，所以「怎么算过门槛」只留这一处，三个调用点不可能走偏。 */
     bool countsTowardRule(const Defect& d) const;
 
-    /** 这一块 heiba 算不算【大油疤】：最长边超过 _heiba_big_min_len_mm 才算。
+    /** 这一块 heiba 算不算【大油疤】：对角线超过 _heiba_big_min_diag_mm 才算
+     *  （量对角线，不是最长边 —— 见 config.h 的 HEIBA_BIG_MIN_DIAG_MM）。
      *  门槛 0 = 这条规则关掉，那时对谁都是 false —— 全落回「小油疤」那条，不会两块都不数。
      *  isNG（数大油疤）和 draw（给大油疤换框色）都用它，跟 countsTowardRule 一个道理：
      *  「怎么算大」只留这一处，判定和显示不可能走偏。 */
@@ -179,7 +182,7 @@ private:
     double _dongban_min_conf      = Config::DONGBAN_MIN_CONF;
     int   _heiba_max_count        = Config::HEIBA_MAX_COUNT;
     int   _heiba_big_max_count    = Config::HEIBA_BIG_MAX_COUNT;
-    int   _heiba_big_min_len_mm   = Config::HEIBA_BIG_MIN_LEN_MM;
+    int   _heiba_big_min_diag_mm  = Config::HEIBA_BIG_MIN_DIAG_MM;
     int   _shupi_max_count        = Config::SHUPI_MAX_COUNT;
     int   _shupi_min_len_mm       = Config::SHUPI_MIN_LEN_MM;
     double _shupi_min_conf        = Config::SHUPI_MIN_CONF;
