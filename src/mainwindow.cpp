@@ -534,8 +534,16 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 2, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
                        &_dongbaSpin, &_dongbaMinLenSpin, lSet);
-    // 小油疤(黑色油滴到板上, 板子不碎) 数量阈值 —— 数量 > 此值判 NG，没有尺寸门槛
-    _heibaSpin = addSpinRow(QString::fromUtf8("小油疤(heiba)数量大于"), 0, 500, 24, lSet);
+    // 小油疤(黑色油滴到板上, 板子不碎)。2026-10-03 起【也变成两个框】了（数量 + 尺寸门槛），
+    // 跟上面「死节」那几行一个样式，也跟下面「大油疤」那行同一把尺子（都量对角线，
+    // 界面上都不提）。在此之前它是「没有尺寸门槛」的 —— 一个都不漏、全数进数量那条。
+    // ⚠ 所以这行右框填多少是有行为后果的：填了数就滤掉小的，那条例变松；填 0 才是老行为。
+    // 加门槛的原因：heiba 的框里点状小杂点不少，全数进 24 会被这些撑爆 —— 10mm 滤掉它们，
+    // 真油疤远大于这个数。门槛填 0 就是不过滤 = 回到加门槛之前的行为。
+    addSpinRowTwoBoxes(QString::fromUtf8("小油疤(heiba)数量大于"),
+                       0, 500, 24, QString::fromUtf8(" 个"),
+                       0, 500, 10, ">", " mm",
+                       &_heibaSpin, &_heibaMinDiagSpin, lSet);
     addSpinRowTwoBoxes(QString::fromUtf8("破洞(dongban)数量大于"),
                        0, 500, 2, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
@@ -684,6 +692,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _dongbaSpin->setValue(s.value("dongba_max", 2).toInt());
     _dongbaMinLenSpin->setValue(s.value("dongba_min_len_mm", 30).toInt());
     _heibaSpin->setValue(s.value("heiba_max", 24).toInt());
+    // 小油疤的尺寸门槛(2026-10-03 加的键, 出厂 10mm = 对角线, 见 config.h 的 HEIBA_MIN_DIAG_MM)。
+    // ⚠ 没有这个键时默认 10 —— 现场要是不想过滤(回到加门槛之前的行为), 把这个框填 0。
+    _heibaMinDiagSpin->setValue(s.value("heiba_min_diag_mm", 10).toInt());
     _dongbanSpin->setValue(s.value("dongban_max_count", 2).toInt());
     _dongbanMinLenSpin->setValue(s.value("dongban_min_len_mm", 30).toInt());
     _dongbanBigSpin->setValue(s.value("dongban_big_max_count", 1).toInt());
@@ -721,6 +732,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongba_min_len_mm", v); });
     connect(_heibaSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_max", v); });
+    connect(_heibaMinDiagSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_min_diag_mm", v); });
     connect(_dongbanSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_max_count", v); });
     connect(_dongbanMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -1085,6 +1098,7 @@ int MainWindow::jiebaMaxCount() const          { return _jiebaSpin->value(); }
 int MainWindow::dongbaMaxCount() const         { return _dongbaSpin->value(); }
 int MainWindow::dongbaMinLenMm() const         { return _dongbaMinLenSpin->value(); }
 int MainWindow::heibaMaxCount() const          { return _heibaSpin->value(); }
+int MainWindow::heibaMinDiagMm() const         { return _heibaMinDiagSpin->value(); }
 int MainWindow::dongbanMaxCount() const        { return _dongbanSpin->value(); }
 int MainWindow::dongbanMinLenMm() const        { return _dongbanMinLenSpin->value(); }
 int MainWindow::dongbanBigMaxCount() const     { return _dongbanBigSpin->value(); }

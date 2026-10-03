@@ -89,6 +89,10 @@ public:
      *    DONGBAN_MIN_CONF）。 */
     double dongbanMinConf() const;
     int heibaMaxCount() const;
+    /** heiba 小油疤的尺寸门槛（2026-10-03 加的）：对角线不过此值的不算数，0 = 不过滤。
+     *  ⚠ 量的是【对角线】—— 跟大油疤那条同一把尺子，跟别的类（量最长边）不是一个数。
+     *    界面上不提这个（2026-10-03 现场定的），输入框后缀照通用的 " mm" 写。 */
+    int heibaMinDiagMm() const;
     // heiba 的第二道更严的门槛（界面行名/原因串都叫「大油疤」，2026-10-03 加的）。
     // 形状跟上面 dongbanBig* 那一对一样，只是换了个类：门槛 heibaBigMinDiagMm 以上的
     // heiba 算数（画框时框线也换成黄色，同一个门槛），块数超过 heibaBigMaxCount 判 NG。
@@ -162,6 +166,9 @@ private:
     QSpinBox* _dongbaSpin       = nullptr;
     QSpinBox* _dongbaMinLenSpin = nullptr;   // 跟 _dongbaSpin 同一行，在右边
     QSpinBox* _heibaSpin        = nullptr;
+    // 小油疤的尺寸门槛（2026-10-03 加的），跟 _dongbaMinLenSpin 一个样式：同一行、在右边。
+    // ⚠ 跟大油疤那对一样，这个框量的是【对角线】，界面上不提。
+    QSpinBox* _heibaMinDiagSpin = nullptr;
     QSpinBox* _dongbanSpin      = nullptr;   // 下面 5 个都跟自己的 *MinLenSpin 同一行
     QSpinBox* _dongbanMinLenSpin= nullptr;   // （左数量、右门槛），跟 _dongbaSpin 一个样式
     // 大破洞：dongban 的第二道门槛，行里两个框的排法跟上面一样

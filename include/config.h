@@ -162,7 +162,18 @@ constexpr int   JIEBA_MAX_COUNT  = 10;       // jieba 活节:数量 > 此值判 
 constexpr int   DONGBA_MAX_COUNT = 2;        // dongba 死节:算数的块数 > 此值判 NG
 constexpr int   DONGBA_MIN_LEN_MM = 30;      // dongba 门槛(mm):最长边短于此值不计数(0=不过滤)
 // 上面 30 = 2026-09-23 现场给的标准(「死节必须是大于 3 公分才算」), 界面上可改。
-constexpr int   HEIBA_MAX_COUNT  = 24;       // heiba 小油疤:数量 > 此值判 NG(没有尺寸门槛)
+constexpr int   HEIBA_MAX_COUNT  = 24;       // heiba 小油疤:算数的块数 > 此值判 NG
+// heiba 小油疤的尺寸门槛(2026-10-03 加的):【对角线】短于此值的不算数(0 = 不过滤)。
+// ⚠ 2026-10-03 之前 heiba 是【没有】尺寸门槛的 —— 一个都不漏、全数进 24。加了这道之后
+//   够小的不再算进 24, 那条规则变松(以前会 NG 的板, 现在可能 OK)。是有意改的:
+//   heiba 的框里点状小杂点不少(它的检测下限比别的类低一档, 见 HEIBA_MIN_CONF),
+//   10mm 这一档就是拿来滤这些的 —— 真油疤远大于它。
+// ⚠ 量的是【对角线】, 跟下面大油疤那条【同一把尺子】(别的类都是最长边)。为什么用对角线
+//   见 HEIBA_BIG_MIN_DIAG_MM 那段。两条规则共用一个量法(代码里 gateUsesDiagonal 一处决定),
+//   不会出现「同一个类两条规则用两把尺子」。
+// ⚠ 门槛 0 = 不过滤 = 全数进 24 = 回到加这道门槛之前的行为 —— 跟 HEIBA_MAX_COUNT 的
+//   0(一个都不许有)正好相反, 别记混。这也是万一现场嫌它太松时的退路。
+constexpr int   HEIBA_MIN_DIAG_MM = 10;
 // heiba 的【第二条】数量规则(2026-10-03 加的, 现场叫【大油疤】):
 // 数的是【对角线】超过 HEIBA_BIG_MIN_DIAG_MM 的 heiba 有多少块, 块数超过
 // HEIBA_BIG_MAX_COUNT 判 NG。形状跟下面 DONGBAN_BIG_* 那条「大破洞」一样 —— 同一个类的

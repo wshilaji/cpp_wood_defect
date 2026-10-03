@@ -567,6 +567,7 @@ int main(int argc, char** argv) {
             post.setDongbaMaxCount(win.dongbaMaxCount());
             post.setDongbaMinLenMm(win.dongbaMinLenMm());
             post.setHeibaMaxCount(win.heibaMaxCount());
+            post.setHeibaMinDiagMm(win.heibaMinDiagMm());
             post.setHeibaBigMaxCount(win.heibaBigMaxCount());
             post.setHeibaBigMinDiagMm(win.heibaBigMinDiagMm());
             post.setDongbanMaxCount(win.dongbanMaxCount());

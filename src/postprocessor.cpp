@@ -29,6 +29,26 @@ static float boxDiagonalMm(const cv::Rect& box) {
     return std::sqrt(w * w + h * h);
 }
 
+// 「这个类量尺寸用哪把尺子」。只有 heiba 用对角线，别的类(含 dongban 的「大破洞」)都是最长边。
+// ⚠ 这是【唯一】一处决定量法的地方，两条读它的路都在下面：
+//     小油疤(heibaMaxCount) 走 countsTowardRule → 这里；
+//     大油疤(heibaBigMaxCount) 走 isBigHeiba → 这里。
+//   所以 heiba 这两条规则【共用一把尺子】—— 不会出现同一个类两条规则量法不一致。
+//   要改成别的类也用量对角线，就在这一行加个类名，别去 isNG / draw 里各写一份条件。
+// 为什么 heiba 用对角线：见 config.h 的 HEIBA_BIG_MIN_DIAG_MM 那段(长条/方形都有，
+// 最长边量出来的数会跟着缺陷朝向变)。
+// ⚠ 界面上【不提】对角线(2026-10-03 现场定的)：小油疤和大油疤两行的输入框后缀都照
+//   通用的 " mm" 写。别看见界面没写就以为是漏了，是特意拿掉的。
+static bool gateUsesDiagonal(const std::string& name) {
+    return name == "heiba";
+}
+
+// 某个类的「大小」→ 毫米。走的就是上面那把尺子。
+// 尺寸门槛(countsTowardRule)、大油疤(isBigHeiba)都从这里取，谁都不许自己挑函数。
+static float boxSizeMm(const std::string& name, const cv::Rect& box) {
+    return gateUsesDiagonal(name) ? boxDiagonalMm(box) : boxLongSideMm(box);
+}
+
 // 每个类的框颜色 (BGR)。draw() 画框 和 drawSummary() 面板文字 共用，保持颜色一致
 static cv::Scalar classColor(const std::string& name) {
     if (name == "dongba")       return cv::Scalar(0, 120, 255);   // 深橙
@@ -184,6 +204,7 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
 int Postprocessor::sizeGateMm(const std::string& name) const {
     if (name == "dongba")  return _dongba_min_len_mm;
     if (name == "dongban") return _dongban_min_len_mm;
+    if (name == "heiba")   return _heiba_min_diag_mm;   // 2026-10-03 起 heiba 也有门槛了
     if (name == "quebian") return _quebian_min_len_mm;
     if (name == "shupi")   return _shupi_min_len_mm;
     if (name == "fabai")   return _fabai_min_len_mm;
@@ -220,7 +241,8 @@ bool Postprocessor::countsTowardRule(const Defect& d) const {
 
     const int gate = sizeGateMm(d.name);
     if (gate <= 0) return true;                                   // 没门槛 / 门槛关掉
-    return boxLongSideMm(d.box) > (float)gate;
+    // 量法跟着类走（heiba 是对角线，别的类是最长边），见 boxSizeMm。
+    return boxSizeMm(d.name, d.box) > (float)gate;
 }
 
 // 「这块 heiba 够不够大、算不算大油疤」。判定和画框都走这一处，理由同 countsTowardRule。
@@ -232,7 +254,8 @@ bool Postprocessor::countsTowardRule(const Defect& d) const {
 bool Postprocessor::isBigHeiba(const Defect& d) const {
     if (d.name != "heiba") return false;
     if (_heiba_big_min_diag_mm <= 0) return false;   // 门槛 0 = 这条规则关掉
-    return boxDiagonalMm(d.box) > (float)_heiba_big_min_diag_mm;
+    // 走 boxSizeMm(heiba → 对角线)，跟小油疤那条同一把尺子。
+    return boxSizeMm(d.name, d.box) > (float)_heiba_big_min_diag_mm;
 }
 
 bool Postprocessor::isNG(const std::vector<Defect>& defects,
@@ -255,11 +278,14 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
         if (d.name == "jieba") {
             jieba_cnt++;
         } else if (d.name == "heiba") {
-            // 小油疤这条数【全部】heiba（一个都不漏），够大的那些同时在下面那条
-            // 「大油疤」里再数一次 —— 两条各数各的，2026-10-03 定的，跟 dongban 那一对一致。
-            // ⚠ 别顺手把够大的从 heiba_cnt 里摘出去：那会悄悄把现场调好的 24 放宽，
-            //   而这次改动只是「把大油疤认出来」，不该动小油疤的计数。
-            heiba_cnt++;
+            // 小油疤：过门槛的才算数（门槛是对角线，2026-10-03 加的，见 HEIBA_MIN_DIAG_MM）。
+            // 够大的那些【同时】在下面那条「大油疤」里再数一次 —— 两条各数各的，
+            // 跟 dongban 那一对（破洞 + 大破洞）一个算法。
+            // ⚠ 默认 10mm 的门槛 < 大油疤的 100mm，所以过了大油疤的必然也过小油疤，
+            //   「两条都数」这个性质是门槛数值保证的。要是哪天把 _heiba_min_diag_mm 调到
+            //   比大油疤还大，中间那一档（大油疤门槛以上、小油疤门槛以下）就会只算进大油疤
+            //   —— 那是配置出来的行为，不是漏了，但现场大概不会这么填。
+            if (countsTowardRule(d)) heiba_cnt++;
             if (isBigHeiba(d)) heiba_big_cnt++;
         } else if (d.name == "dongba") {
             if (countsTowardRule(d)) dongba_cnt++;
@@ -287,7 +313,7 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     // （包括不算数的小块），数出来比 2 多，以为程序数错了。置信度门槛同理：看到「发白>99」
     // 去数图上所有发白框，其中一部分是因为概率不够没算数，不写清楚又是一次「程序数错了」。
     // （树皮 2026-09-30 也多了这道，理由完全一样。）
-    // gate_mm / gate_conf 传 0 就是不写那一道门槛（jieba/heiba 两道都没有）。
+    // gate_mm / gate_conf 传 0 就是不写那一道门槛（现在 7 个类里只有 jieba 两道都没有）。
     // 两道都有时合成一个括号（"发白>99(30mm以上,概率>0.65)"），不叠两层括号。
     auto countReason = [](const char* cn, int max_cnt, int gate_mm, double gate_conf = 0.0) {
         std::string s = std::string(cn) + ">" + std::to_string(max_cnt);
@@ -310,8 +336,10 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
         reasons.push_back(countReason("活节", _jieba_max_count, 0));
     if (dongba_cnt > _dongba_max_count)
         reasons.push_back(countReason("死节", _dongba_max_count, _dongba_min_len_mm));
+    // 小油疤 2026-10-03 起也有尺寸门槛了（以前这里传 0 = 不写门槛）。原因串照通用格式，
+    // 不写「对角线」（量法不外露，见 mainwindow.cpp 那行注释）。
     if (heiba_cnt > _heiba_max_count)
-        reasons.push_back(countReason("小油疤", _heiba_max_count, 0));
+        reasons.push_back(countReason("小油疤", _heiba_max_count, _heiba_min_diag_mm));
     if (dongban_cnt > _dongban_max_count)
         reasons.push_back(countReason("破洞", _dongban_max_count, _dongban_min_len_mm));
     // 破洞的第二道(现场叫「一票否决」)。跟上面那条是同一个类的两条规则, 原因串必须让

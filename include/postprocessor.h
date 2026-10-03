@@ -20,7 +20,7 @@ public:
     std::vector<Defect> process(const trtyolo::DetectRes& res,
                                 cv::Mat& frame, const cv::Size& size);
 
-    /** 整体 NG 判定。全部按【数量】判：jieba/heiba 不管大小全算，dongba/dongban/
+    /** 整体 NG 判定。全部按【数量】判：只有 jieba 不管大小全算，dongba/dongban/heiba/
      *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（dongban/fabai/shupi 还多一道
      *  置信度门槛，见 dongbanMinConf/fabaiMinConf/shupiMinConf）；dongban 和 heiba 各有
      *  第二道更严的数量规则（大破洞 / 大油疤，门槛/上限见
@@ -44,11 +44,13 @@ public:
     void drawSummary(cv::Mat& frame, const std::vector<Defect>& defects);
 
     // ---- 工人可调阈值（运行时可改，界面输入框控制；每块板由 main.cpp 下发）----
-    // 判定用的 7 个类全是「数量」规则：MAX_COUNT 是数量上限，MIN_LEN_MM 是尺寸门槛
-    // （检测框最长边换算成毫米，短于此值的不计数，0 = 不过滤）。jieba/heiba 没有门槛这一半。
+    // 判定用的 7 个类全是「数量」规则：MAX_COUNT 是数量上限，MIN_* 是尺寸门槛
+    // （检测框量出来的毫米数短于此值的不计数，0 = 不过滤）。7 个里只有 jieba 没有尺寸门槛
+    // 这一半 —— 其余六个里 dongba/dongban/quebian/shupi/fabai 量【最长边】，heiba 量
+    // 【对角线】（全项目唯一一个，两条 heiba 规则共用，见 gateUsesDiagonal）。
     // 尺寸门槛的毫米换算是标定值（config.h MM_PER_PX），相机装高装低它就偏 —— 见那里的注释。
-    // *_MIN_CONF 是另一种门槛（模型置信度，不是尺寸）：fabai 和 shupi 各有一道 ——
-    // 它俩是本项目仅有的两道不看框大小、只看模型把握的门槛。
+    // *_MIN_CONF 是另一种门槛（模型置信度，不是尺寸）：dongban / shupi / fabai 各有一道 ——
+    // 这三道是全项目仅有的不看框大小、只看模型把握的门槛。
 
     void setJiebaMaxCount(int n) { _jieba_max_count = n; }
     int  jiebaMaxCount() const   { return _jieba_max_count; }
@@ -85,6 +87,13 @@ public:
 
     void setHeibaMaxCount(int n) { _heiba_max_count = n; }
     int  heibaMaxCount() const   { return _heiba_max_count; }
+    /** heiba 小油疤的尺寸门槛（2026-10-03 加的）：【对角线】不过此值(mm)的不算数。
+     *  0 = 不过滤 = 全数进 heibaMaxCount（= 加这道门槛之前的行为）。
+     *  ⚠ 量的是对角线，跟大油疤那条是【同一把尺子】（别的类都是最长边）——
+     *    代码里只有 gateUsesDiagonal 一处决定量法。理由见 config.h 的 HEIBA_BIG_MIN_DIAG_MM。
+     *  ⚠ 界面上不提「对角线」（2026-10-03 现场定的），输入框后缀照通用的 " mm" 写。 */
+    void setHeibaMinDiagMm(int mm) { _heiba_min_diag_mm = mm; }
+    int  heibaMinDiagMm() const    { return _heiba_min_diag_mm; }
     /** heiba 的第二道数量规则，现场叫【大油疤】(2026-10-03 加的)：
      *  【对角线】超过此值(mm)的 heiba 才算数，块数超过 heibaBigMaxCount 判 NG。跟上面那条
      *  (heibaMaxCount) 是同一个类的两道门槛，形状跟 dongbanBig* 一模一样：那条管
@@ -181,6 +190,7 @@ private:
     int   _dongban_big_min_len_mm = Config::DONGBAN_BIG_MIN_LEN_MM;
     double _dongban_min_conf      = Config::DONGBAN_MIN_CONF;
     int   _heiba_max_count        = Config::HEIBA_MAX_COUNT;
+    int   _heiba_min_diag_mm      = Config::HEIBA_MIN_DIAG_MM;
     int   _heiba_big_max_count    = Config::HEIBA_BIG_MAX_COUNT;
     int   _heiba_big_min_diag_mm  = Config::HEIBA_BIG_MIN_DIAG_MM;
     int   _shupi_max_count        = Config::SHUPI_MAX_COUNT;
