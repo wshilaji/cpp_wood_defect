@@ -64,6 +64,9 @@ public:
     // ---- 工人设置（主循环轮询读取） ----
     // 判定用的 7 个类全是数量规则：*MaxCount 是数量上限，*MinLenMm 是尺寸门槛
     // （最长边短于此值的不计数，0 = 不过滤）。jieba/heiba 没有门槛这一半。
+    // 另外破洞和 heiba 各多一道更严的第二道数量规则（dongbanBig* / heibaBig*，
+    // 界面上是「大破洞」和「大油疤」两行），形状完全一样：门槛以上的才算数，
+    // 块数超过上限判 NG。
     // dongban / shupi / fabai 除了尺寸门槛还各多一道置信度门槛（dongbanMinConf /
     // shupiMinConf / fabaiMinConf）—— 这是全项目仅有的三道不看框大小、只看模型把握的
     // 门槛，跟尺寸门槛是「且」的关系。
@@ -72,18 +75,26 @@ public:
     int dongbaMinLenMm() const;
     int dongbanMaxCount() const;
     int dongbanMinLenMm() const;
-    // 破洞的第二道更严的门槛（界面行名/原因串都叫「大破洞或大油疤」）。跟上面那对是
+    // 破洞的第二道更严的门槛（界面行名/原因串都叫「大破洞」）。跟上面那对是
     // 同一个类的两条规则，形状一样：门槛 dongbanBigMinLenMm 以上的破洞算数，
     // 块数超过 dongbanBigMaxCount 判 NG。
     int dongbanBigMaxCount() const;
     int dongbanBigMinLenMm() const;
     /** dongban 的置信度门槛：模型的 dongban 概率大于此值才算数（0 = 关掉这道门槛）。
-     *  ⚠ 它管的是破洞那【两条】数量规则（dongbanMaxCount 和 dongbanBigMaxCount）。
+     *  ⚠ 它只卡上面那条「破洞」(dongbanMaxCount)：它挂在 postprocessor 的 minConfFor 表上，
+     *    是 countsTowardRule 的一部分。而「大破洞」(dongbanBigMaxCount) 在 isNG 里是自己
+     *    一条 if，不走那张表，所以【不】应用这道门槛。
      *  ⚠ 有作用的区间同 fabaiMinConf：0.31~0.99（全局 CONF_THRESHOLD 在更前面就筛掉了
      *    0.3 以下，填 0.3 及以下等于没填）。出厂 0.45（现场定的数，见 config.h 的
      *    DONGBAN_MIN_CONF）。 */
     double dongbanMinConf() const;
     int heibaMaxCount() const;
+    // heiba 的第二道更严的门槛（界面行名/原因串都叫「大油疤」，2026-10-03 加的）。
+    // 形状跟上面 dongbanBig* 那一对一样，只是换了个类：门槛 heibaBigMinLenMm 以上的
+    // heiba 算数（画框时框线也换成黄色，同一个门槛），块数超过 heibaBigMaxCount 判 NG。
+    // ⚠ 两条各数各的：够大的 heiba 既算进 heibaMaxCount 的 24，也算进这条。
+    int heibaBigMaxCount() const;
+    int heibaBigMinLenMm() const;
     int quebianMaxCount() const;
     int quebianMinLenMm() const;
     int shupiMaxCount() const;
@@ -151,9 +162,14 @@ private:
     QSpinBox* _heibaSpin        = nullptr;
     QSpinBox* _dongbanSpin      = nullptr;   // 下面 5 个都跟自己的 *MinLenSpin 同一行
     QSpinBox* _dongbanMinLenSpin= nullptr;   // （左数量、右门槛），跟 _dongbaSpin 一个样式
-    // 大破洞或大油疤：dongban 的第二道门槛，行里两个框的排法跟上面一样
+    // 大破洞：dongban 的第二道门槛，行里两个框的排法跟上面一样
     QSpinBox* _dongbanBigSpin      = nullptr;
     QSpinBox* _dongbanBigMinLenSpin= nullptr;
+    // 大油疤：heiba 的第二道门槛（2026-10-03 加的），紧挨着上面那一对排。
+    // 两个类各一对，形状完全一样 —— 别把这两对看成一回事：上面那对数 dongban、
+    // 这对数 heiba，行名和 NG 原因串也分得开（「大破洞」/「大油疤」）。
+    QSpinBox* _heibaBigSpin      = nullptr;
+    QSpinBox* _heibaBigMinLenSpin= nullptr;
     QSpinBox* _quebianSpin      = nullptr;
     QSpinBox* _quebianMinLenSpin= nullptr;
     QSpinBox* _shupiSpin        = nullptr;

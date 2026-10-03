@@ -547,18 +547,30 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 这条管「单块太大」—— 一个 40mm 的大洞比两个 30mm 的严重, 而上面那条数块数的口径
     // 表达不出这件事(1 个 < 2 个, 反而放行)。「一票否决」这个名字说的就是这层意思。
     // 紧挨着上面那行放: 两条说的都是 dongban, 中间隔开的话工人得来回找。
-    // 「大油疤」写进行名不是啰嗦 —— 见下面那行提示, 大油疤并进 dongban 了, 这条实际管
-    // 破洞 + 大油疤两样, 只写「大破洞」会让人以为大油疤不归它管。
-    addSpinRowTwoBoxes(QString::fromUtf8("大破洞或大油疤数量大于"),
+    addSpinRowTwoBoxes(QString::fromUtf8("大破洞(dongban)数量大于"),
                        0, 500, 1, QString::fromUtf8(" 个"),
                        0, 500, 40, ">", " mm",
                        &_dongbanBigSpin, &_dongbanBigMinLenSpin, lSet);
-    // 标注备注 —— 紧跟在「破洞」这两行下面: 说的是这两条规则收哪些缺陷, 放远了就对不上号
-    // (大油疤在 labelme 里也标成 dongban, 所以跟着破洞一起判)
+    // 大油疤 —— heiba 那边的第二道门槛, 2026-10-03 从上面那行【拆出来】的。
+    // 拆的原因: 大油疤的标注那天从 dongban 挪到了 heiba(config.h 的类名对照), 而上面那行
+    // 数的是 dongban, 从此够不着它 —— 不单开一行, 大油疤就没人判了。
+    // 行名带 (heiba): 这行数的不是破洞, 是【小油疤那个类】里够大的那些。这一条对工人最
+    // 要紧 —— 大油疤和小油疤在模型里是同一个类名, 只有大小分得开, 所以「大油疤」四个字
+    // 指的不是图上的一个类, 而是「小油疤里够大的」。不带 (heiba) 容易跟上面的小油疤那行
+    // 对不上号。大小门槛 100mm 只是出厂值, 界面上随时改。
+    addSpinRowTwoBoxes(QString::fromUtf8("大油疤(heiba)数量大于"),
+                       0, 500, 1, QString::fromUtf8(" 个"),
+                       0, 500, 100, ">", " mm",
+                       &_heibaBigSpin, &_heibaBigMinLenSpin, lSet);
+    // 标注备注 —— 紧跟在「破洞」「大油疤」这几行下面: 说的是这两条规则各收哪些缺陷,
+    // 放远了就对不上号。
     // 「一票否决」是现场给这条规则起的名字 —— 这句要留在面板上: 一个 40mm 的大洞比两个
     // 30mm 的严重得多, 光看「数量大于 1」看不出这层意思, 工人会当成「又一个数量规则」。
+    // ⚠ 原话里有「大油疤归到破洞里面」—— 2026-10-03 起【不成立了】(大油疤改标在 heiba),
+    //   留着会让人以为大油疤还归破洞那条管, 所以整句重写。
     auto* holeHint = new QLabel(
-        QString::fromUtf8("（大破洞或大油疤一票否决；大油疤归到破洞里面）"), grpSet);
+        QString::fromUtf8("（大破洞/大油疤=够大的一个就否决；大油疤数的是小油疤里够大的那些）"),
+        grpSet);
     holeHint->setWordWrap(true);
     holeHint->setStyleSheet("color:#909090; font-size:12px;");
     lSet->addWidget(holeHint);
@@ -574,7 +586,8 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
                        0, 500, 99, QString::fromUtf8(" 个"),
                        0, 500, 30, ">", " mm",
                        &_fabaiSpin, &_fabaiMinLenSpin, lSet);
-    // 一条提示罩住上面那几行【数量/直径】（五个类），不逐行重复 —— 左边、右边的语义完全一样。
+    // 一条提示罩住上面那几行【数量/直径】（六个类、七行：死节/破洞/大破洞/大油疤/缺边/树皮/发白），
+    // 不逐行重复 —— 左边、右边的语义完全一样。
     // ⚠ 必须放在发白那行【正下方】、三道概率【之前】: 它说的是「左边=数量、右边=直径」，
     //   罩的是上面那几行；放到三道概率下面（2026-10-02 之前的排法）会让人以为它也在说概率。
     // ⚠ 这行必须短，一行就好：面板在 QScrollArea 里，多占一行就多一行要滚。
@@ -669,6 +682,11 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     _dongbanMinLenSpin->setValue(s.value("dongban_min_len_mm", 30).toInt());
     _dongbanBigSpin->setValue(s.value("dongban_big_max_count", 1).toInt());
     _dongbanBigMinLenSpin->setValue(s.value("dongban_big_min_len_mm", 40).toInt());
+    // 大油疤(2026-10-03 加的键, 出厂 1 / 100mm, 见 config.h 的 HEIBA_BIG_*)。
+    // ⚠ 没有 ini 时这两个默认值就是「大油疤」这条规则上线时的取值 —— 现场没填过的话
+    //   它就是 1 个 100mm 以上判 NG, 别以为这条规则默认是关的(门槛填 0 才是关)。
+    _heibaBigSpin->setValue(s.value("heiba_big_max_count", 1).toInt());
+    _heibaBigMinLenSpin->setValue(s.value("heiba_big_min_len_mm", 100).toInt());
     // 出厂 0.45(现场定的数, 见 config.h 的 DONGBAN_MIN_CONF)。
     // ⚠ 跟下面树皮/发白那两行一样必须 toDouble: 写成 toInt 会读成 0 且不报错 ——
     //   正好落回「关掉这道门槛」, 现场调过的数会【静默失效】, 而且不报错、还看着正常。
@@ -705,6 +723,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_big_max_count", v); });
     connect(_dongbanBigMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_big_min_len_mm", v); });
+    connect(_heibaBigSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_big_max_count", v); });
+    connect(_heibaBigMinLenSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [](int v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("heiba_big_min_len_mm", v); });
     connect(_dongbanMinConfSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, [](double v) { QSettings(QStringLiteral("config.ini"), QSettings::IniFormat).setValue("dongban_min_conf", v); });
     connect(_quebianSpin, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -1061,6 +1083,8 @@ int MainWindow::dongbanMaxCount() const        { return _dongbanSpin->value(); }
 int MainWindow::dongbanMinLenMm() const        { return _dongbanMinLenSpin->value(); }
 int MainWindow::dongbanBigMaxCount() const     { return _dongbanBigSpin->value(); }
 int MainWindow::dongbanBigMinLenMm() const     { return _dongbanBigMinLenSpin->value(); }
+int MainWindow::heibaBigMaxCount() const       { return _heibaBigSpin->value(); }
+int MainWindow::heibaBigMinLenMm() const       { return _heibaBigMinLenSpin->value(); }
 double MainWindow::dongbanMinConf() const      { return _dongbanMinConfSpin->value(); }
 int MainWindow::quebianMaxCount() const        { return _quebianSpin->value(); }
 int MainWindow::quebianMinLenMm() const        { return _quebianMinLenSpin->value(); }
