@@ -170,8 +170,9 @@ private:
     // 大油疤：heiba 的第二道门槛（2026-10-03 加的），紧挨着上面那一对排。
     // 两个类各一对，形状完全一样 —— 别把这两对看成一回事：上面那对数 dongban、
     // 这对数 heiba，行名和 NG 原因串也分得开（「大破洞」/「大油疤」）。
-    // ⚠ 这对右边的框是【对角线】(mm)，跟别的行量的不是一回事 —— 见 mainwindow.cpp
-    //   那行的提示文案和 config.h 的 HEIBA_BIG_MIN_DIAG_MM。
+    // ⚠ 这对右边的框是【对角线】(mm)，跟别的行量的不是一回事 —— 见 config.h 的
+    //    HEIBA_BIG_MIN_DIAG_MM。【界面上不提这个】(2026-10-03 现场定的)，别到时候看见
+    //    界面没写以为是漏了。
     QSpinBox* _heibaBigSpin        = nullptr;
     QSpinBox* _heibaBigMinDiagSpin = nullptr;
     QSpinBox* _quebianSpin      = nullptr;

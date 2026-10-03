@@ -558,9 +558,12 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 要紧 —— 大油疤和小油疤在模型里是同一个类名, 只有大小分得开, 所以「大油疤」四个字
     // 指的不是图上的一个类, 而是「小油疤里够大的」。不带 (heiba) 容易跟上面的小油疤那行
     // 对不上号。大小门槛 100mm 只是出厂值, 界面上随时改。
-    // ⚠ 这个门槛量的是【对角线】, 不是别的行那种最长边 —— 全项目唯一一处。数为什么不一样
-    //   见 config.h 的 HEIBA_BIG_MIN_DIAG_MM, 那句话没往输入框后缀里塞(这行本来就长,
-    //   2026-10-02 现场刚抱怨过挤), 而是写在下面那句 holeHint 和 NG 原因串里。
+    // ⚠ 这个门槛量的是【对角线】, 不是别的行那种最长边 —— 全项目唯一一处(见 config.h 的
+    //   HEIBA_BIG_MIN_DIAG_MM)。【但这行界面上一字不提】: 2026-10-03 现场定的 ——
+    //   工人只需要知道「填个数、够大的算多」, 量的什么尺子不归他管, 写出来反而添乱
+    //   (而且这行本来就长, 2026-10-02 现场刚抱怨过挤)。所以后缀照旧写 " mm"、
+    //   holeHint 不提、NG 原因串也照「大油疤>1(100mm以上)」的通用格式走 ——
+    //   尺子的事只留在注释里(给改代码的人看, 不给工人看)。
     addSpinRowTwoBoxes(QString::fromUtf8("大油疤(heiba)数量大于"),
                        0, 500, 1, QString::fromUtf8(" 个"),
                        0, 500, 100, ">", " mm",
@@ -572,8 +575,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // ⚠ 原话里有「大油疤归到破洞里面」—— 2026-10-03 起【不成立了】(大油疤改标在 heiba),
     //   留着会让人以为大油疤还归破洞那条管, 所以整句重写。
     auto* holeHint = new QLabel(
-        QString::fromUtf8("（大破洞/大油疤=够大的一个就否决；大油疤数的是小油疤里够大的那些，"
-                          "量的是对角线——跟别的行量的不是一回事）"),
+        QString::fromUtf8("（大破洞/大油疤=够大的一个就否决；大油疤数的是小油疤里够大的那些）"),
         grpSet);
     holeHint->setWordWrap(true);
     holeHint->setStyleSheet("color:#909090; font-size:12px;");

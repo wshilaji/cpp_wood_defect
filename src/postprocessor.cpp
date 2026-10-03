@@ -289,13 +289,10 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     // （树皮 2026-09-30 也多了这道，理由完全一样。）
     // gate_mm / gate_conf 传 0 就是不写那一道门槛（jieba/heiba 两道都没有）。
     // 两道都有时合成一个括号（"发白>99(30mm以上,概率>0.65)"），不叠两层括号。
-    // gate_label 是门槛那一段的前缀，只有大油疤用（"对角线"）—— 它那道门槛量的不是最长边，
-    // 原因串里不写明的话，工人看到「大油疤>1(100mm以上)」会拿最长边去量图上的框，怎么都对不上。
-    auto countReason = [](const char* cn, int max_cnt, int gate_mm,
-                          double gate_conf = 0.0, const char* gate_label = "") {
+    auto countReason = [](const char* cn, int max_cnt, int gate_mm, double gate_conf = 0.0) {
         std::string s = std::string(cn) + ">" + std::to_string(max_cnt);
         std::string gate;
-        if (gate_mm > 0) gate = std::string(gate_label) + std::to_string(gate_mm) + "mm以上";
+        if (gate_mm > 0) gate = std::to_string(gate_mm) + "mm以上";
         if (gate_conf > 0.0) {
             std::ostringstream cs;
             cs << "概率>" << std::fixed << std::setprecision(2) << gate_conf;
@@ -328,9 +325,11 @@ bool Postprocessor::isNG(const std::vector<Defect>& defects,
     // 大油疤 —— heiba 那边的第二道(2026-10-03 加的), 形状跟上面那条大破洞一模一样,
     // 只是换了个类: 数 heiba 里够大的那些。紧挨着大破洞排, 因为这俩在界面上也是挨着的
     // 两行, 而且都是「一块太大就否决」这层意思。
+    // 原因串照通用格式走（「大油疤>1(100mm以上)」），不写「对角线」—— 量法是内部的事，
+    // 界面上不提（2026-10-03 现场定的，见 mainwindow.cpp 那一行的注释）。
     if (heiba_big_cnt > _heiba_big_max_count)
         reasons.push_back(countReason("大油疤", _heiba_big_max_count,
-                                      _heiba_big_min_diag_mm, 0.0, "对角线"));
+                                      _heiba_big_min_diag_mm));
     if (quebian_cnt > _quebian_max_count)
         reasons.push_back(countReason("缺边", _quebian_max_count, _quebian_min_len_mm));
     if (shupi_cnt > _shupi_max_count)
