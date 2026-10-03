@@ -1,8 +1,8 @@
 task: detect
 mode: train
-model: best.pt
-data: /root/dys102/YOLODataset/dataset.yaml
-epochs: 500
+model: yolo11n.pt
+data: /root/dys103/YOLODataset/dataset.yaml
+epochs: 300
 time: null
 patience: 100
 batch: 8
