@@ -271,6 +271,19 @@ labelme2yolo --json_dir 20261001yolo/ --val_size 0.09 --test_size 0.01 "dongban,
 ### autodl 模型训练
 ```
 nohup yolo detect train data=/root/dys/YOLODataset/dataset.yaml model=yolo11n.pt epochs=300 imgsz=640 device=0 batch=16 amp=False > train.log 2>&1 &
+
+ohup yolo detect train data=/root/dys/YOLODataset/dataset.yaml model=yolo11n.pt epochs=300 imgsz=960 device=0 batch=16 amp=False > train.log 2>&1 & 之前是imgsz=640 直接改成960是这样改吧
+
+nohup yolo detect train data=/root/dys/YOLODataset/dataset.yaml model=yolo11s.pt epochs=300 imgsz=960 device=0 batch=16 amp=False > train.log 2>&1 & 之前是imgsz=640 直接改成960是这样改吧
+```
+
+### autodl 模型训练
+```
+yolo export model=yolo11n.pt format=onnx batch=1 imgsz=960
+trtyolo-export -i yolo11n.onnx -o yolo11n-trtyolo.onnx -s
+trtexec --onnx=best-trtyolo.onnx \
+        --saveEngine=best.engine \
+        --fp16
 ```
 
 ---
