@@ -279,8 +279,8 @@ nohup yolo detect train data=/root/dys/YOLODataset/dataset.yaml model=yolo11s.pt
 
 ### autodl 模型训练
 ```
-yolo export model=yolo11n.pt format=onnx batch=1 imgsz=960
-trtyolo-export -i yolo11n.onnx -o yolo11n-trtyolo.onnx -s
+yolo export model=best.pt format=onnx batch=1 imgsz=960
+trtyolo-export -i best.onnx -o best-trtyolo.onnx -s
 trtexec --onnx=best-trtyolo.onnx \
         --saveEngine=best.engine \
         --fp16
