@@ -586,13 +586,40 @@ int main(int argc, char** argv) {
             post.setMinLengthMm(win.minLengthMm());
             post.setMinWidthMm(win.minWidthMm());
 
-            // 后处理 + 画框
-            cv::Size sz(img.cols, img.rows);
-            auto defects = post.process(res, img, sz);
-
-            // 木板长宽测量
+            // ---- 木板长宽测量 ----
+            // ⚠ 必须排在 post.process()【之前】，而且量的是 frame(干净帧)、不是 img：
+            //   测出来的矩形要拿去给 process() 做板外过滤（见下），而 process 里紧接着就
+            //   draw() 画框，所以矩形得先算出来。量 frame 而不是 img，是因为 img 这时候
+            //   已经画满缺陷框、左上角统计面板还被压暗了 40%(drawSummary 的 addWeighted)，
+            //   OTSU 在这种图上算阈值本来就不干净 —— 挪到干净帧上测量只会更准。
+            //   ⚠ 副作用：测出的长/宽可能跟改前差一点点(OTSU 阈值变了)，而板长/板宽是有
+            //     NG 规则的(MIN_LENGTH_MM/MIN_WIDTH_MM)，卡在边界上的板可能翻判 ——
+            //     上机时拿几块已知板对比一下改前改后的读数。
             cv::Mat K = makeK(Config::FX, Config::FY, Config::CX, Config::CY);
-            auto measure = measureBoard(img, K, Config::DISTANCE_MM);
+            auto measure = measureBoard(frame, K, Config::DISTANCE_MM);
+
+            // 板外过滤区域：本板最小外接【旋转】矩形，四边各外扩 BOARD_REGION_MARGIN_PX。
+            // 用途见 config.h 的 BOARD_REGION_MARGIN_PX 段（把下一块板探进来的 1/10 里
+            // 检出的缺陷挡在本板统计之外）。
+            // ⚠ 只在测量成功时把指针传下去 —— 失败(或没测到)时传 nullptr，process() 内部
+            //   整段跳过过滤、退回旧行为。绝不可以失败时构造一个空/退化矩形传进去，
+            //   那会把整板的框全滤掉、把 NG 板判成 OK（漏检，本功能最危险的失效方向）。
+            const cv::RotatedRect* region_ptr = nullptr;
+            cv::RotatedRect region;
+            if (measure.valid) {
+                region = cv::RotatedRect(
+                    measure.rrect.center,
+                    cv::Size2f(measure.rrect.size.width  + 2 * Config::BOARD_REGION_MARGIN_PX,
+                               measure.rrect.size.height + 2 * Config::BOARD_REGION_MARGIN_PX),
+                    measure.rrect.angle);
+                region_ptr = &region;
+            }
+
+            // 后处理 + 画框（板外的检测框在 process 里就被丢掉，既不画也不数，见 region）
+            cv::Size sz(img.cols, img.rows);
+            auto defects = post.process(res, img, sz, region_ptr);
+
+            // 蓝框照画在 img(结果图)上，位置跟改前一样（画的是【未外扩】的原始矩形）
             if (measure.valid) {
                 cv::Point2f rc[4];
                 measure.rrect.points(rc);

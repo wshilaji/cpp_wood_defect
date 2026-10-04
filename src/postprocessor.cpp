@@ -100,7 +100,8 @@ float Postprocessor::minDetectConf(const std::string& name) const {
 }
 
 std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
-                                            cv::Mat& frame, const cv::Size& size) {
+                                            cv::Mat& frame, const cv::Size& size,
+                                            const cv::RotatedRect* board) {
     std::vector<Defect> defects;
 
     for (int i = 0; i < res.num; ++i) {
@@ -123,6 +124,22 @@ std::vector<Defect> Postprocessor::process(const trtyolo::DetectRes& res,
         int y = std::max(0, (int)b.top);
         int w = std::min((int)(b.right - b.left), size.width - x);
         int h = std::min((int)(b.bottom - b.top), size.height - y);
+
+        // 板外过滤（见 config.h 的 BOARD_REGION_MARGIN_PX 段）：
+        // 只保留【检测框中心】落在本板矩形（已外扩）里的检测。放进 push_back【之前】——
+        // 丢掉的框既不画(draw)、也不进面板(drawSummary)、也不算数(isNG)，三处共用同一份
+        // defects，不会出现「画出来却不算数」。矩形是【旋转】的，判点在不在斜四边形里
+        // 交给 pointPolygonTest，跟板子斜多少度无关（别改用图像轴的 x/y 比大小，那只对
+        // 正着的矩形成立）。
+        // board == nullptr（调用方没传 / 本板测量失败）→ 整段跳过 = 不过滤，退回旧行为。
+        if (board) {
+            cv::Point2f pts[4];
+            board->points(pts);   // 4 个角点，旋转已含在内
+            const cv::Point2f c((float)x + (float)w * 0.5f,
+                                (float)y + (float)h * 0.5f);
+            if (cv::pointPolygonTest(cv::Mat(4, 1, CV_32FC2, pts), c, false) < 0)
+                continue;
+        }
 
         Defect d;
         d.cls_id = cls_id;

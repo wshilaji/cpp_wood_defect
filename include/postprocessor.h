@@ -17,8 +17,17 @@ public:
     Postprocessor(float thresh, const std::vector<std::string>& classes)
         : _thresh(thresh), _classes(classes) {}
 
+    /** 后处理：过滤 → 建 Defect 列表 → draw 画框 → drawSummary 画面板，返回这份 defects。
+     *  @param board  本板区域（已外扩的旋转矩形）。传了就把【检测框中心】落在矩形外的
+     *                检测整个丢掉（不画、不数、不判）；传 nullptr = 不过滤。
+     *  ⚠ 调用方（main.cpp）只在【测量成功】时传 —— 测量失败传 nullptr，退回旧行为。
+     *    绝不可以在测量失败时构造一个空/退化矩形传进来，那会把整板的框滤光、NG 判成 OK。
+     *    详见 config.h 的 BOARD_REGION_MARGIN_PX 段。
+     *  ⚠ 过滤放在 push_back 之前，所以 draw/drawSummary/isNG 共用同一份 defects，
+     *    不会出现「画出来却不算数」—— 这是这个库一贯的单一口径。 */
     std::vector<Defect> process(const trtyolo::DetectRes& res,
-                                cv::Mat& frame, const cv::Size& size);
+                                cv::Mat& frame, const cv::Size& size,
+                                const cv::RotatedRect* board = nullptr);
 
     /** 整体 NG 判定。全部按【数量】判：只有 jieba 不管大小全算，dongba/dongban/heiba/
      *  shupi/fabai/quebian 先按各自尺寸门槛过滤掉小的再数（dongban/fabai/shupi 还多一道
